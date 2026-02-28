@@ -9,8 +9,9 @@ CPUS ?= 2
 
 ROOT_IMAGE ?= build/rootfs.raw
 KERNEL ?= build/kernel
+AGENT_GO_SOURCES := $(shell find agent -type f -name '*.go')
 
-.PHONY: help agent rootfs kernel raw image run run-efi clean clean-kernel check-kernel
+.PHONY: help agent rootfs kernel raw image run run-efi clean clean-kernel check-kernel require-kernel
 
 help:
 	@echo "Targets:"
@@ -28,7 +29,7 @@ help:
 	@echo "  AGENT_PORT=8080         Agent port"
 	@echo "  MEMORY_MIB=512 CPUS=2   VM resources"
 
-build/.agent.stamp: image/scripts/build-agent.sh image/scripts/lib/arch.sh agent/go.mod agent/cmd/agent/main.go
+build/.agent.stamp: image/scripts/build-agent.sh image/scripts/lib/arch.sh agent/go.mod $(AGENT_GO_SOURCES)
 	@mkdir -p build
 	VERBOSE=$(VERBOSE) ./image/scripts/build-agent.sh
 	@touch $@
@@ -50,12 +51,12 @@ build/kernel: image/scripts/build-kernel.sh image/scripts/build-kernel-source.sh
 
 kernel: build/kernel
 
-build/rootfs.raw: image/scripts/make-raw-image.sh build/.rootfs.stamp build/kernel
+build/rootfs.raw: image/scripts/make-raw-image.sh build/.rootfs.stamp
 	VERBOSE=$(VERBOSE) ./image/scripts/make-raw-image.sh
 
 raw: build/rootfs.raw
 
-image: build/rootfs.raw
+image: build/kernel build/rootfs.raw
 
 check-kernel: build/kernel
 	@if [[ "$$(uname -m)" == "arm64" ]]; then \
@@ -63,7 +64,18 @@ check-kernel: build/kernel
 		( echo "invalid kernel format for arm64:" && file build/kernel && exit 1 ); \
 	fi
 
-run: build/rootfs.raw build/kernel
+require-kernel:
+	@if [[ ! -f "$(KERNEL)" ]]; then \
+		echo "missing kernel artifact: $(KERNEL)"; \
+		echo "run: make kernel"; \
+		exit 1; \
+	fi
+	@if [[ "$$(uname -m)" == "arm64" ]]; then \
+		file "$(KERNEL)" | grep -q "Linux kernel ARM64 boot executable Image" || \
+		( echo "invalid kernel format for arm64:" && file "$(KERNEL)" && echo "run: make kernel KERNEL_MODE=source" && exit 1 ); \
+	fi
+
+run: build/rootfs.raw require-kernel
 	cd manager && ./run-local.sh \
 		--boot-mode $(BOOT_MODE) \
 		--kernel ../$(KERNEL) \

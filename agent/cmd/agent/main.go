@@ -24,7 +24,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("listen %s: %v", addr, err)
 	}
-	log.Printf("agent listening on %s", addr)
+	log.Printf("agent[%d] listening on %s", os.Getpid(), addr)
 
 	for {
 		conn, err := ln.Accept()

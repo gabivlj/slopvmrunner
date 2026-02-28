@@ -35,13 +35,13 @@ Implemented now:
 One-shot helper:
 
 ```bash
-./image/scripts/build-image.sh
+make image
 ```
 
 Verbose run:
 
 ```bash
-VERBOSE=1 ./image/scripts/build-image.sh
+VERBOSE=1 KERNEL_MODE=source make image
 ```
 
 Notes:
@@ -86,12 +86,7 @@ Remaining:
 From `manager/`, run with local signing + entitlements:
 
 ```bash
-./run-local.sh \
-  --boot-mode linux \
-  --kernel ../build/vmlinuz \
-  --root-image ../build/rootfs.raw \
-  --agent-port 8080 \
-  --verbose
+make run AGENT_PORT=8080
 ```
 
 Why this wrapper: macOS requires the `com.apple.security.virtualization` entitlement to create VMs via `Virtualization.framework`. `run-local.sh` signs `.build/debug/vmmanager` with `manager/vmmanager.entitlements` before execution.
@@ -101,9 +96,7 @@ On Apple Silicon, `VZLinuxBootLoader` needs an uncompressed ARM64 Linux `Image` 
 EFI mode is now supported:
 
 ```bash
-./run-local.sh \
-  --boot-mode efi \
-  --root-image /path/to/efi-bootable-disk.raw
+make run-efi ROOT_IMAGE=/path/to/efi-bootable-disk.raw
 ```
 
 Note: current `build/rootfs.raw` is a direct Linux rootfs (ext4, no EFI system partition / bootloader), so it will not boot in EFI mode.
@@ -111,7 +104,7 @@ Note: current `build/rootfs.raw` is a direct Linux rootfs (ext4, no EFI system p
 If package kernels resolve to EFI/PE, force source build:
 
 ```bash
-KERNEL_MODE=source ./image/scripts/build-kernel.sh
+KERNEL_MODE=source make kernel
 ```
 
 ## Agent Behavior (current)
