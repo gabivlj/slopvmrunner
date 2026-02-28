@@ -1,0 +1,32 @@
+# OS/editor noise
+.DS_Store
+*.swp
+*.swo
+
+# Project build artifacts
+/build/
+
+# SwiftPM / Xcode
+manager/.build/
+manager/.swiftpm/
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+
+# Go
+agent/agent
+agent/*.test
+
+# Coverage and logs
+*.log
+*.out
+coverage/
+
+# Env/local config
+.env
+.env.*
+
+# Optional VM artifacts outside build/ (defensive)
+*.raw
+*.qcow2
+*.img
