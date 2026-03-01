@@ -39,6 +39,7 @@ Flags:
 - `--kernel <path>`: kernel artifact path (required for `linux` boot mode).
 - `--initrd <path>`: optional initrd path.
 - `--root-image <path>`: root disk image path (required).
+- `--extra-disk <path>`: repeatable extra writable disk image paths.
 - `--memory-mib <int>`: VM memory MiB (default `512`).
 - `--cpus <int>`: VM CPU count (default `2`).
 - `--agent-vsock-port <int>`: vsock port for guest agent connect path (default `7000`).

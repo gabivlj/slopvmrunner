@@ -80,6 +80,7 @@ type VMConfig struct {
 	KernelPath           string
 	InitrdPath           string
 	RootImage            string
+	ExtraDiskPaths       []string
 	MemoryMiB            int
 	CPUs                 int
 	AgentVsockPort       int
@@ -97,6 +98,11 @@ type VMConfig struct {
 func (c VMConfig) Validate() error {
 	if c.RootImage == "" {
 		return errors.New("root image is required")
+	}
+	for _, diskPath := range c.ExtraDiskPaths {
+		if strings.TrimSpace(diskPath) == "" {
+			return errors.New("extra disk path cannot be empty")
+		}
 	}
 	if c.BootMode != "" && !c.BootMode.IsValid() {
 		return fmt.Errorf("invalid boot mode %q (expected %q or %q)", c.BootMode, BootModeLinux, BootModeEFI)
@@ -162,6 +168,9 @@ func (c VMConfig) ManagerArgs() ([]string, error) {
 		"--agent-ready-socket", c.AgentReadySocketPath,
 		"--enable-network", strconv.FormatBool(c.EnableNetwork),
 		"--network-mode", c.NetworkMode.String(),
+	}
+	for _, diskPath := range c.ExtraDiskPaths {
+		args = append(args, "--extra-disk", diskPath)
 	}
 	for _, port := range c.ProxyVsockPorts {
 		args = append(args, "--proxy-vsock-port", strconv.Itoa(port))

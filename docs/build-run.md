@@ -21,6 +21,15 @@ make run-go
 `vmmanager` remains available and is used as the backend VM component.
 By default, `run-go` is vsock-first.
 
+Container flow (current scaffold):
+
+```bash
+make run-container IMAGE=docker.io/library/ubuntu:latest
+```
+
+When `--container-image` is set and `--oci-spec` is omitted, the runner generates a default OCI spec (`build/oci-default.json`) and uses it through `ContainerService.create(...).start(...)`.
+`RunOCI` now uses the attached ext4 image disk as source for container rootfs before invoking `runc`.
+
 Run Swift manager directly:
 
 ```bash

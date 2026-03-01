@@ -1,11 +1,13 @@
 SHELL := /bin/bash
 
 VERBOSE ?= 1
+RUN_VERBOSE ?= 0
 KERNEL_MODE ?= source
 BOOT_MODE ?= linux
 AGENT_VSOCK_PORT ?= 7000
 MEMORY_MIB ?= 512
 CPUS ?= 2
+IMAGE ?= docker.io/library/ubuntu:latest
 
 ROOT_IMAGE ?= build/rootfs.raw
 KERNEL ?= build/kernel
@@ -19,8 +21,9 @@ GO_PATH_DIR := $(abspath build/.gopath)
 GO_BUILD_ENV := GOCACHE=$(GO_CACHE_DIR) GOPATH=$(GO_PATH_DIR)
 GO_MIN_VERSION := go1.26.0
 TEST ?=
+VERBOSE_FLAG := $(if $(filter 1 true yes on,$(RUN_VERBOSE)),--verbose,)
 
-.PHONY: help api agent rootfs kernel raw image vm-binaries test run run-go run-efi clean clean-kernel check-kernel require-kernel check-go
+.PHONY: help api agent rootfs kernel raw image vm-binaries test run run-go run-container run-efi clean clean-kernel check-kernel require-kernel check-go
 
 help:
 	@echo "Targets:"
@@ -32,14 +35,17 @@ help:
 	@echo "  make raw                Build/refresh rootfs.raw"
 	@echo "  make run                Run VM in linux boot mode"
 	@echo "  make run-go             Run VM via Go wrapper (spawns Swift manager)"
+	@echo "  make run-container      Run VM via Go wrapper and auto-pull IMAGE for container flow"
 	@echo "  make run-efi            Run VM in efi boot mode"
 	@echo "  make test               Run e2e cold-boot benchmark test"
 	@echo "  make check-kernel       Validate kernel artifact format"
 	@echo ""
 	@echo "Variables:"
 	@echo "  VERBOSE=1               Verbose script output"
+	@echo "  RUN_VERBOSE=0           Verbose VM runtime logs/console output"
 	@echo "  KERNEL_MODE=source      Force source kernel build"
 	@echo "  AGENT_VSOCK_PORT=7000   Agent vsock port"
+	@echo "  IMAGE=docker.io/library/ubuntu:latest  Container image used by run-container"
 	@echo "  TEST=Regex             Optional go test -run filter for make test"
 	@echo "  MEMORY_MIB=512 CPUS=2   VM resources"
 
@@ -130,7 +136,7 @@ run: build/rootfs.raw require-kernel build/vmmanager
 		--agent-vsock-port $(AGENT_VSOCK_PORT) \
 		--memory-mib $(MEMORY_MIB) \
 		--cpus $(CPUS) \
-		--verbose
+		$(VERBOSE_FLAG)
 
 run-go: build/rootfs.raw require-kernel build/vm
 	./build/vm \
@@ -141,7 +147,21 @@ run-go: build/rootfs.raw require-kernel build/vm
 		--agent-ready-socket build/agent-ready.sock \
 		--memory-mib $(MEMORY_MIB) \
 		--cpus $(CPUS) \
-		--verbose=true
+		$(VERBOSE_FLAG)
+
+run-container: build/rootfs.raw require-kernel build/vm
+	./build/vm \
+		--boot-mode $(BOOT_MODE) \
+		--kernel $(KERNEL) \
+		--root-image $(ROOT_IMAGE) \
+		--agent-vsock-port $(AGENT_VSOCK_PORT) \
+		--agent-ready-socket build/agent-ready.sock \
+		--enable-network=true \
+		--network-mode nat \
+		--memory-mib $(MEMORY_MIB) \
+		--cpus $(CPUS) \
+		--container-image $(IMAGE) \
+		$(VERBOSE_FLAG)
 
 run-efi: build/rootfs.raw build/vmmanager
 	./build/vmmanager \
@@ -149,7 +169,7 @@ run-efi: build/rootfs.raw build/vmmanager
 		--root-image $(ROOT_IMAGE) \
 		--memory-mib $(MEMORY_MIB) \
 		--cpus $(CPUS) \
-		--verbose
+		$(VERBOSE_FLAG)
 
 clean-kernel:
 	rm -f build/kernel build/vmlinuz build/vmlinuz-virt

@@ -23,8 +23,13 @@ Related docs:
 Current capability split:
 
 - `Agent.network() -> Network`
+- `Agent.containerService() -> ContainerService`
 - `Network.configureInterface(ifName, cidr, gateway)`
 - `Network.setupVsockProxy(port)`
+- `ContainerService.create(oci, image, id) -> Container`
+- `Container.start(stdout, stderr) -> Task`
+- `Task.stdin() -> ByteStream`
+- `Task.exitCode() -> Int32`
 
 Additional internal/benchmark capabilities exist on `Agent` but are not part of the stable surface.
 

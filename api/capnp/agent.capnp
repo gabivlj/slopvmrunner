@@ -22,7 +22,21 @@ interface Network {
   setupVsockProxy @1 (port :UInt32);
 }
 
+interface Task {
+  stdin @0 () -> (stream :ByteStream);
+  exitCode @1 () -> (code :Int32);
+}
+
+interface Container {
+  start @0 (stdout :ByteStream, stderr :ByteStream) -> (task :Task);
+}
+
+interface ContainerService {
+  create @0 (oci :Data, image :Text, id :Text) -> (container :Container);
+}
+
 interface Agent {
   debug @0 () -> (debug :Debug);
   network @1 () -> (network :Network);
+  containerService @2 () -> (service :ContainerService);
 }

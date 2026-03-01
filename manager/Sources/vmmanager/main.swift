@@ -18,6 +18,7 @@ struct ManagerConfig {
     let kernelPath: String?
     let initrdPath: String?
     let rootImagePath: String
+    let extraDiskPaths: [String]
     let memoryMiB: UInt64
     let cpuCount: Int
     let agentVsockPort: Int
@@ -262,6 +263,7 @@ struct VMManagerCLI {
         var kernelPath: String?
         var initrdPath: String?
         var rootImagePath: String?
+        var extraDiskPaths: [String] = []
         var memoryMiB: UInt64 = 512
         var cpuCount = 2
         var agentVsockPort = 7000
@@ -292,6 +294,8 @@ struct VMManagerCLI {
                 i += 1; initrdPath = value(at: i, for: arg)
             case "--root-image":
                 i += 1; rootImagePath = value(at: i, for: arg)
+            case "--extra-disk":
+                i += 1; extraDiskPaths.append(value(at: i, for: arg))
             case "--memory-mib":
                 i += 1; memoryMiB = UInt64(value(at: i, for: arg)) ?? memoryMiB
             case "--cpus":
@@ -356,6 +360,7 @@ struct VMManagerCLI {
             kernelPath: kernelPath,
             initrdPath: initrdPath,
             rootImagePath: rootImagePath,
+            extraDiskPaths: extraDiskPaths,
             memoryMiB: memoryMiB,
             cpuCount: cpuCount,
             agentVsockPort: agentVsockPort,
@@ -389,6 +394,7 @@ Options:
   --boot-mode <linux|efi> Default linux
   --kernel <path>         Required in linux mode
   --initrd <path>         Optional initrd path
+  --extra-disk <path>     Repeatable extra writable block disks
   --memory-mib <int>      Default 512
   --cpus <int>            Default 2
   --agent-vsock-port <int>  Default 7000
@@ -434,20 +440,32 @@ Options:
             }
         }
 
-        let diskAttachment = try VZDiskImageStorageDeviceAttachment(
+        var storageDevices: [VZStorageDeviceConfiguration] = []
+        let rootDiskAttachment = try VZDiskImageStorageDeviceAttachment(
             url: URL(fileURLWithPath: config.rootImagePath),
             readOnly: false
         )
-        let disk = VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)
-        vmConfig.storageDevices = [disk]
+        storageDevices.append(VZVirtioBlockDeviceConfiguration(attachment: rootDiskAttachment))
+        for extraPath in config.extraDiskPaths {
+            let attachment = try VZDiskImageStorageDeviceAttachment(
+                url: URL(fileURLWithPath: extraPath),
+                readOnly: false
+            )
+            storageDevices.append(VZVirtioBlockDeviceConfiguration(attachment: attachment))
+        }
+        vmConfig.storageDevices = storageDevices
 
-        let serialAttachment = VZFileHandleSerialPortAttachment(
-            fileHandleForReading: FileHandle.standardInput,
-            fileHandleForWriting: FileHandle.standardOutput
-        )
-        let serial = VZVirtioConsoleDeviceSerialPortConfiguration()
-        serial.attachment = serialAttachment
-        vmConfig.serialPorts = [serial]
+        if config.verbose {
+            let serialAttachment = VZFileHandleSerialPortAttachment(
+                fileHandleForReading: FileHandle.standardInput,
+                fileHandleForWriting: FileHandle.standardOutput
+            )
+            let serial = VZVirtioConsoleDeviceSerialPortConfiguration()
+            serial.attachment = serialAttachment
+            vmConfig.serialPorts = [serial]
+        } else {
+            vmConfig.serialPorts = []
+        }
 
         let entropy = VZVirtioEntropyDeviceConfiguration()
         vmConfig.entropyDevices = [entropy]
@@ -496,7 +514,9 @@ Options:
             switch result {
             case .success:
                 runtime.enableVsockAgentListener()
-                print("vm started")
+                if config.verbose {
+                    print("vm started")
+                }
             case .failure(let error):
                 fputs("failed to start vm: \(error)\n", stderr)
                 exit(1)

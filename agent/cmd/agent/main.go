@@ -1,3 +1,5 @@
+//go:build linux
+
 package main
 
 import (
@@ -18,6 +20,9 @@ import (
 
 func main() {
 	if os.Getpid() == 1 {
+		if err := setupRuntimeMounts(); err != nil {
+			log.Printf("runtime mount setup failed: %v", err)
+		}
 		go reapZombies()
 	}
 	go handleSignals()

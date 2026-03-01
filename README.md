@@ -21,6 +21,10 @@ Key outputs:
 - `build/kernel`: Linux kernel artifact
 - `build/rootfs.raw`: guest root disk
 
+Container scaffold:
+
+- `make run-container IMAGE=<ref>` runs `RunOCI` from an actual image reference (host populates ext4 image disk, guest mounts it for rootfs) and auto-generates a default OCI spec if `--oci-spec` is not provided.
+
 ## Repository Layout
 
 - `vm/`: Go runner (primary product entrypoint)
