@@ -25,7 +25,7 @@ func main() {
 	go handleSignals()
 
 	cid, port := parseVsockTarget()
-	log.Printf("agent[%d] connecting to host via vsock cid=%d port=%d", os.Getpid(), cid, port)
+	log.Printf("agent[%d] v2 connecting to host via vsock cid=%d port=%d", os.Getpid(), cid, port)
 
 	for {
 		file, err := dialVsock(cid, port)
@@ -46,11 +46,32 @@ func main() {
 }
 
 type agentServer struct{}
+type debugServer struct{}
+type networkServer struct{}
 type byteStreamServer struct {
 	bytes atomic.Uint64
 }
 
-func (agentServer) Ping(_ context.Context, call vmapi.Agent_ping) error {
+func (agentServer) Debug(_ context.Context, call vmapi.Agent_debug) error {
+	res, err := call.AllocResults()
+	if err != nil {
+		return err
+	}
+
+	debug := vmapi.Debug_ServerToClient(debugServer{})
+	return res.SetDebug(debug)
+}
+
+func (agentServer) Network(_ context.Context, call vmapi.Agent_network) error {
+	res, err := call.AllocResults()
+	if err != nil {
+		return err
+	}
+	network := vmapi.Network_ServerToClient(networkServer{})
+	return res.SetNetwork(network)
+}
+
+func (debugServer) Ping(_ context.Context, call vmapi.Debug_ping) error {
 	res, err := call.AllocResults()
 	if err != nil {
 		return err
@@ -58,14 +79,12 @@ func (agentServer) Ping(_ context.Context, call vmapi.Agent_ping) error {
 	return res.SetMessage_("pong")
 }
 
-func (agentServer) OpenByteStream(_ context.Context, call vmapi.Agent_openByteStream) error {
+func (debugServer) OpenByteStream(_ context.Context, call vmapi.Debug_openByteStream) error {
 	res, err := call.AllocResults()
 	if err != nil {
 		return err
 	}
-
 	stream := vmapi.ByteStream_ServerToClient(&byteStreamServer{})
-	defer stream.Release()
 	return res.SetStream(stream)
 }
 
@@ -80,6 +99,27 @@ func (s *byteStreamServer) Write(_ context.Context, call vmapi.ByteStream_write)
 
 func (s *byteStreamServer) Done(_ context.Context, _ vmapi.ByteStream_done) error {
 	log.Printf("byte stream done: bytes=%d", s.bytes.Load())
+	return nil
+}
+
+func (networkServer) ConfigureInterface(_ context.Context, call vmapi.Network_configureInterface) error {
+	ifName, err := call.Args().IfName()
+	if err != nil {
+		return err
+	}
+	cidr, err := call.Args().Cidr()
+	if err != nil {
+		return err
+	}
+	gateway, err := call.Args().Gateway()
+	if err != nil {
+		return err
+	}
+
+	if err := configureInterfaceLink(ifName, cidr, gateway); err != nil {
+		return err
+	}
+	log.Printf("network configured if=%s cidr=%s gateway=%s", ifName, cidr, gateway)
 	return nil
 }
 

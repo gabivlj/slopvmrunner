@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,10 @@ type VMConfig struct {
 	CPUs                 int
 	AgentVsockPort       int
 	AgentReadySocketPath string
+	EnableNetwork        bool
+	VMNetworkCIDR        string
+	VMNetworkGateway     string
+	VMNetworkIfName      string
 	Verbose              bool
 }
 
@@ -59,6 +64,21 @@ func (c VMConfig) Validate() error {
 	if c.AgentReadySocketPath == "" {
 		return errors.New("agent readiness unix socket path is required")
 	}
+	if c.EnableNetwork {
+		if c.VMNetworkCIDR != "" {
+			if _, err := netip.ParsePrefix(c.VMNetworkCIDR); err != nil {
+				return fmt.Errorf("invalid vm network cidr %q: %w", c.VMNetworkCIDR, err)
+			}
+			if c.VMNetworkIfName == "" {
+				return errors.New("vm network ifname is required when vm network cidr is set")
+			}
+		}
+		if c.VMNetworkGateway != "" {
+			if _, err := netip.ParseAddr(c.VMNetworkGateway); err != nil {
+				return fmt.Errorf("invalid vm network gateway %q: %w", c.VMNetworkGateway, err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -77,6 +97,16 @@ func (c VMConfig) ManagerArgs() ([]string, error) {
 		"--cpus", strconv.Itoa(c.CPUs),
 		"--agent-vsock-port", strconv.Itoa(c.AgentVsockPort),
 		"--agent-ready-socket", c.AgentReadySocketPath,
+		"--enable-network", strconv.FormatBool(c.EnableNetwork),
+	}
+	if c.VMNetworkCIDR != "" {
+		args = append(args, "--vm-network-cidr", c.VMNetworkCIDR)
+	}
+	if c.VMNetworkGateway != "" {
+		args = append(args, "--vm-network-gateway", c.VMNetworkGateway)
+	}
+	if c.VMNetworkIfName != "" {
+		args = append(args, "--vm-network-ifname", c.VMNetworkIfName)
 	}
 
 	if c.BootMode == BootModeLinux {
@@ -259,6 +289,68 @@ func (r *VMRunner) Run(ctx context.Context, cfg VMConfig) (*VMContext, error) {
 		<-procWaitCh
 		return nil, errors.New("received invalid agent capability")
 	}
+	if cfg.EnableNetwork && cfg.VMNetworkCIDR != "" {
+		networkIfName := cfg.VMNetworkIfName
+		if networkIfName == "" {
+			networkIfName = "eth0"
+		}
+		gateway := cfg.VMNetworkGateway
+		if gateway == "" {
+			derivedGateway, err := defaultGatewayFromCIDR(cfg.VMNetworkCIDR)
+			if err != nil {
+				agent.Release()
+				_ = rpcConn.Close()
+				_ = agentRWC.Close()
+				_ = cmd.Process.Kill()
+				<-procWaitCh
+				return nil, fmt.Errorf("derive gateway from cidr %q: %w", cfg.VMNetworkCIDR, err)
+			}
+			gateway = derivedGateway
+		}
+
+		networkFuture, release := agent.Network(ctx, nil)
+		networkRes, err := networkFuture.Struct()
+		release()
+		if err != nil {
+			agent.Release()
+			_ = rpcConn.Close()
+			_ = agentRWC.Close()
+			_ = cmd.Process.Kill()
+			<-procWaitCh
+			return nil, fmt.Errorf("fetch network capability: %w", err)
+		}
+		network := networkRes.Network()
+		if !network.IsValid() {
+			agent.Release()
+			_ = rpcConn.Close()
+			_ = agentRWC.Close()
+			_ = cmd.Process.Kill()
+			<-procWaitCh
+			return nil, errors.New("received invalid network capability")
+		}
+
+		configFuture, configRelease := network.ConfigureInterface(ctx, func(p vmapi.Network_configureInterface_Params) error {
+			if err := p.SetIfName(networkIfName); err != nil {
+				return err
+			}
+			if err := p.SetCidr(cfg.VMNetworkCIDR); err != nil {
+				return err
+			}
+			return p.SetGateway(gateway)
+		})
+		_, configErr := configFuture.Struct()
+		configRelease()
+		network.Release()
+		if configErr != nil {
+			agent.Release()
+			_ = rpcConn.Close()
+			_ = agentRWC.Close()
+			_ = cmd.Process.Kill()
+			<-procWaitCh
+			return nil, fmt.Errorf("configure guest network: %w", configErr)
+		}
+		r.Logger.Info("guest network configured", "ifname", networkIfName, "cidr", cfg.VMNetworkCIDR, "gateway", gateway)
+	}
 
 	vmCtx := &VMContext{
 		waitCh: make(chan error, 1),
@@ -290,6 +382,20 @@ func (r *VMRunner) Run(ctx context.Context, cfg VMConfig) (*VMContext, error) {
 	}()
 
 	return vmCtx, nil
+}
+
+func defaultGatewayFromCIDR(cidr string) (string, error) {
+	prefix, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return "", err
+	}
+	base := prefix.Masked().Addr()
+	if !base.Is4() {
+		return "", fmt.Errorf("only IPv4 CIDR is supported right now: %q", cidr)
+	}
+	base4 := base.As4()
+	base4[3]++
+	return netip.AddrFrom4(base4).String(), nil
 }
 
 func recvFD(conn *net.UnixConn) (int, error) {

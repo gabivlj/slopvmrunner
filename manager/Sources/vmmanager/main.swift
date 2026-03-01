@@ -16,17 +16,35 @@ struct ManagerConfig {
     let cpuCount: Int
     let agentVsockPort: Int
     let agentReadySocketPath: String?
+    let enableNetwork: Bool
+    let vmNetworkCIDR: String?
+    let vmNetworkGateway: String?
+    let vmNetworkIfName: String?
     let verbose: Bool
 
     var bootArgs: String {
-        [
+        var args = [
             "console=hvc0",
             "loglevel=7",
             "printk.time=1",
             "root=/dev/vda rw",
             "init=/sbin/agent",
             "agent.vsock_port=\(agentVsockPort)"
-        ].joined(separator: " ")
+        ]
+
+        if enableNetwork {
+            if let vmNetworkCIDR, !vmNetworkCIDR.isEmpty {
+                args.append("agent.network_cidr=\(vmNetworkCIDR)")
+            }
+            if let vmNetworkGateway, !vmNetworkGateway.isEmpty {
+                args.append("agent.network_gateway=\(vmNetworkGateway)")
+            }
+            if let vmNetworkIfName, !vmNetworkIfName.isEmpty {
+                args.append("agent.network_ifname=\(vmNetworkIfName)")
+            }
+        }
+
+        return args.joined(separator: " ")
     }
 }
 
@@ -230,6 +248,10 @@ struct VMManagerCLI {
         var cpuCount = 2
         var agentVsockPort = 7000
         var agentReadySocketPath: String?
+        var enableNetwork = true
+        var vmNetworkCIDR: String?
+        var vmNetworkGateway: String?
+        var vmNetworkIfName: String?
         var verbose = false
 
         var i = 1
@@ -257,6 +279,23 @@ struct VMManagerCLI {
                 i += 1; agentVsockPort = Int(value(at: i, for: arg)) ?? agentVsockPort
             case "--agent-ready-socket":
                 i += 1; agentReadySocketPath = value(at: i, for: arg)
+            case "--enable-network":
+                i += 1
+                let raw = value(at: i, for: arg).lowercased()
+                switch raw {
+                case "true", "1", "yes", "on":
+                    enableNetwork = true
+                case "false", "0", "no", "off":
+                    enableNetwork = false
+                default:
+                    throw CLIError.invalidArg("--enable-network must be true/false")
+                }
+            case "--vm-network-cidr":
+                i += 1; vmNetworkCIDR = value(at: i, for: arg)
+            case "--vm-network-gateway":
+                i += 1; vmNetworkGateway = value(at: i, for: arg)
+            case "--vm-network-ifname":
+                i += 1; vmNetworkIfName = value(at: i, for: arg)
             case "--verbose":
                 verbose = true
             case "--help", "-h":
@@ -284,6 +323,10 @@ struct VMManagerCLI {
             cpuCount: cpuCount,
             agentVsockPort: agentVsockPort,
             agentReadySocketPath: agentReadySocketPath,
+            enableNetwork: enableNetwork,
+            vmNetworkCIDR: vmNetworkCIDR,
+            vmNetworkGateway: vmNetworkGateway,
+            vmNetworkIfName: vmNetworkIfName,
             verbose: verbose
         )
     }
@@ -310,6 +353,10 @@ Options:
   --cpus <int>            Default 2
   --agent-vsock-port <int>  Default 7000
   --agent-ready-socket <path> Optional unix socket path for readiness notify
+  --enable-network <bool>   Default true
+  --vm-network-cidr <cidr>  Optional CIDR passed to guest cmdline
+  --vm-network-gateway <ip> Optional gateway passed to guest cmdline
+  --vm-network-ifname <name> Optional ifname passed to guest cmdline
   --verbose               Enable manager debug logs
   -h, --help              Show help
 """
@@ -362,10 +409,14 @@ Options:
         let entropy = VZVirtioEntropyDeviceConfiguration()
         vmConfig.entropyDevices = [entropy]
 
-        let netAttachment = VZNATNetworkDeviceAttachment()
-        let netDevice = VZVirtioNetworkDeviceConfiguration()
-        netDevice.attachment = netAttachment
-        vmConfig.networkDevices = [netDevice]
+        if config.enableNetwork {
+            let netAttachment = VZNATNetworkDeviceAttachment()
+            let netDevice = VZVirtioNetworkDeviceConfiguration()
+            netDevice.attachment = netAttachment
+            vmConfig.networkDevices = [netDevice]
+        } else {
+            vmConfig.networkDevices = []
+        }
 
         let socketConfig = VZVirtioSocketDeviceConfiguration()
         vmConfig.socketDevices = [socketConfig]
@@ -375,7 +426,7 @@ Options:
         let vm = VZVirtualMachine(configuration: vmConfig)
         if config.verbose {
             let kernelDesc = config.kernelPath ?? "<none>"
-            fputs("[vmmanager] bootMode=\(config.bootMode.rawValue) kernel=\(kernelDesc) rootImage=\(config.rootImagePath) memMiB=\(config.memoryMiB) cpus=\(config.cpuCount) agentVsockPort=\(config.agentVsockPort)\n", stderr)
+            fputs("[vmmanager] bootMode=\(config.bootMode.rawValue) kernel=\(kernelDesc) rootImage=\(config.rootImagePath) memMiB=\(config.memoryMiB) cpus=\(config.cpuCount) agentVsockPort=\(config.agentVsockPort) enableNetwork=\(config.enableNetwork)\n", stderr)
             fputs("[vmmanager] kernelCmdline=\(config.bootArgs)\n", stderr)
             fputs("[vmmanager] serial console attached to stdio\n", stderr)
         }

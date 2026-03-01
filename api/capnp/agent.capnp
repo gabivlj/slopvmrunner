@@ -6,11 +6,21 @@ $Go.package("vmapi");
 $Go.import("github.com/gabrielvillalongasimon/vmrunner/api/gen/go/capnp");
 
 interface ByteStream {
-  write @0 (chunk :Data);
+  write @0 (chunk :Data) -> stream;
   done @1 ();
 }
 
-interface Agent {
+interface Debug {
   ping @0 () -> (message :Text);
   openByteStream @1 () -> (stream :ByteStream);
+  # openByteStream just serves the purpose of sending data.
+}
+
+interface Network {
+  configureInterface @0 (ifName :Text, cidr :Text, gateway :Text);
+}
+
+interface Agent {
+  debug @0 () -> (debug :Debug);
+  network @1 () -> (network :Network);
 }

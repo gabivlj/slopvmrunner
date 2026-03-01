@@ -23,6 +23,10 @@ func main() {
 	flag.IntVar(&cfg.CPUs, "cpus", 2, "VM CPU count")
 	flag.IntVar(&cfg.AgentVsockPort, "agent-vsock-port", 7000, "Agent vsock port to pass via kernel cmdline")
 	flag.StringVar(&cfg.AgentReadySocketPath, "agent-ready-socket", "build/agent-ready.sock", "Unix socket path for readiness notification")
+	flag.BoolVar(&cfg.EnableNetwork, "enable-network", true, "Attach a VM network device and configure guest networking")
+	flag.StringVar(&cfg.VMNetworkCIDR, "vm-network-cidr", "192.168.64.2/24", "Guest interface CIDR to configure via agent network capability")
+	flag.StringVar(&cfg.VMNetworkGateway, "vm-network-gateway", "", "Guest default gateway; if empty, derive first host in vm-network-cidr")
+	flag.StringVar(&cfg.VMNetworkIfName, "vm-network-ifname", "eth0", "Guest interface name to configure via agent network capability")
 	flag.BoolVar(&cfg.Verbose, "verbose", true, "Enable vmmanager verbose logs")
 	flag.Parse()
 
@@ -51,7 +55,18 @@ func main() {
 	pingNow := time.Now()
 	agent := vmCtx.Agent()
 	defer agent.Release()
-	pingFuture, release := agent.Ping(pingCtx, nil)
+	debugFuture, debugRelease := agent.Debug(pingCtx, nil)
+	defer debugRelease()
+	debugRes, err := debugFuture.Struct()
+	if err != nil {
+		logger.Error("agent debug capability failed", "error", err)
+		_ = vmCtx.Kill()
+		os.Exit(1)
+	}
+	debug := debugRes.Debug()
+	defer debug.Release()
+
+	pingFuture, release := debug.Ping(pingCtx, nil)
 	defer release()
 	pingRes, err := pingFuture.Struct()
 	if err != nil {

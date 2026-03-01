@@ -16,8 +16,9 @@ API_GO_GENERATED := $(shell find api/gen/go -type f -name '*.go' 2>/dev/null)
 GO_CACHE_DIR := $(abspath build/.gocache)
 GO_PATH_DIR := $(abspath build/.gopath)
 GO_BUILD_ENV := GOCACHE=$(GO_CACHE_DIR) GOPATH=$(GO_PATH_DIR)
+GO_MIN_VERSION := go1.26.0
 
-.PHONY: help api agent rootfs kernel raw image vm-binaries test run run-go run-efi clean clean-kernel check-kernel require-kernel
+.PHONY: help api agent rootfs kernel raw image vm-binaries test run run-go run-efi clean clean-kernel check-kernel require-kernel check-go
 
 help:
 	@echo "Targets:"
@@ -39,25 +40,38 @@ help:
 	@echo "  AGENT_VSOCK_PORT=7000   Agent vsock port"
 	@echo "  MEMORY_MIB=512 CPUS=2   VM resources"
 
+check-go:
+	@v="$$(go env GOVERSION 2>/dev/null || true)"; \
+	if [[ -z "$$v" ]]; then \
+		echo "go toolchain not found in PATH"; \
+		exit 1; \
+	fi; \
+	if ! printf '%s\n%s\n' "$(GO_MIN_VERSION)" "$$v" | sort -V -C; then \
+		echo "go toolchain too old: $$v (need >= $(GO_MIN_VERSION))"; \
+		exit 1; \
+	fi
+
 build/.api-go.stamp: api/scripts/gen-go.sh api/go.mod api/go.sum $(API_CAPNP_SOURCES)
 	@mkdir -p build
 	cd api && $(GO_BUILD_ENV) ./scripts/gen-go.sh
 	@touch $@
 
-api: build/.api-go.stamp
+api: check-go build/.api-go.stamp
 
-build/.agent.stamp: image/scripts/build-agent.sh image/scripts/lib/arch.sh agent/go.mod $(AGENT_GO_SOURCES) build/.api-go.stamp $(API_GO_GENERATED)
+build/agent: check-go image/scripts/build-agent.sh image/scripts/lib/arch.sh agent/go.mod $(AGENT_GO_SOURCES) api/scripts/gen-go.sh api/go.mod api/go.sum $(API_CAPNP_SOURCES)
 	@mkdir -p build
+	$(MAKE) api
 	VERBOSE=$(VERBOSE) ./image/scripts/build-agent.sh
-	@touch $@
 
-agent: build/.agent.stamp
+agent: build/agent
 
-build/.rootfs.stamp: image/scripts/build-rootfs.sh image/scripts/lib/arch.sh image/rootfs-overlay/etc/hostname image/rootfs-overlay/etc/passwd image/rootfs-overlay/etc/group build/.agent.stamp
+build/.rootfs.stamp: image/scripts/build-rootfs.sh image/scripts/lib/arch.sh image/rootfs-overlay/etc/hostname image/rootfs-overlay/etc/passwd image/rootfs-overlay/etc/group build/agent
 	VERBOSE=$(VERBOSE) ./image/scripts/build-rootfs.sh
 	@touch $@
 
-rootfs: build/.rootfs.stamp
+rootfs: image/scripts/build-rootfs.sh image/scripts/lib/arch.sh image/rootfs-overlay/etc/hostname image/rootfs-overlay/etc/passwd image/rootfs-overlay/etc/group build/agent
+	VERBOSE=$(VERBOSE) ./image/scripts/build-rootfs.sh
+	@touch build/.rootfs.stamp
 
 build/kernel: image/scripts/build-kernel.sh image/scripts/build-kernel-source.sh image/scripts/lib/arch.sh build/.rootfs.stamp
 	VERBOSE=$(VERBOSE) KERNEL_MODE=$(KERNEL_MODE) ./image/scripts/build-kernel.sh
@@ -79,13 +93,13 @@ build/vmmanager: manager/run-local.sh manager/Package.swift manager/Sources/vmma
 	@mkdir -p build
 	./manager/run-local.sh --out "$(abspath build/vmmanager)" --build-only
 
-build/vm: vm/go.mod $(VM_GO_SOURCES) build/.api-go.stamp $(API_GO_GENERATED) build/vmmanager
+build/vm: check-go vm/go.mod $(VM_GO_SOURCES) build/.api-go.stamp $(API_GO_GENERATED) build/vmmanager
 	@mkdir -p build
 	cd vm && $(GO_BUILD_ENV) go build -o ../build/vm ./cmd/vm
 
 vm-binaries: build/vmmanager build/vm
 
-test: image vm-binaries
+test: check-go build/rootfs.raw require-kernel vm-binaries
 	cd vm && $(GO_BUILD_ENV) go test -count=1 -v ./...
 
 check-kernel: build/kernel

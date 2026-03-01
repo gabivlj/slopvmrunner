@@ -8,6 +8,7 @@ import (
 	fc "capnproto.org/go/capnp/v3/flowcontrol"
 	schemas "capnproto.org/go/capnp/v3/schemas"
 	server "capnproto.org/go/capnp/v3/server"
+	stream "capnproto.org/go/capnp/v3/std/capnp/stream"
 	context "context"
 )
 
@@ -16,8 +17,7 @@ type ByteStream capnp.Client
 // ByteStream_TypeID is the unique identifier for the type ByteStream.
 const ByteStream_TypeID = 0xed83e41c1767406f
 
-func (c ByteStream) Write(ctx context.Context, params func(ByteStream_write_Params) error) (ByteStream_write_Results_Future, capnp.ReleaseFunc) {
-
+func (c ByteStream) Write(ctx context.Context, params func(ByteStream_write_Params) error) error {
 	s := capnp.Send{
 		Method: capnp.Method{
 			InterfaceID:   0xed83e41c1767406f,
@@ -31,8 +31,7 @@ func (c ByteStream) Write(ctx context.Context, params func(ByteStream_write_Para
 		s.PlaceArgs = func(s capnp.Struct) error { return params(ByteStream_write_Params(s)) }
 	}
 
-	ans, release := capnp.Client(c).SendCall(ctx, s)
-	return ByteStream_write_Results_Future{Future: ans.Future()}, release
+	return capnp.Client(c).SendStreamCall(ctx, s)
 
 }
 
@@ -192,9 +191,9 @@ func (c ByteStream_write) Args() ByteStream_write_Params {
 }
 
 // AllocResults allocates the results struct.
-func (c ByteStream_write) AllocResults() (ByteStream_write_Results, error) {
+func (c ByteStream_write) AllocResults() (stream.StreamResult, error) {
 	r, err := c.Call.AllocResults(capnp.ObjectSize{DataSize: 0, PointerCount: 0})
-	return ByteStream_write_Results(r), err
+	return stream.StreamResult(r), err
 }
 
 // ByteStream_done holds the state for a server call to ByteStream.done.
@@ -298,71 +297,6 @@ type ByteStream_write_Params_Future struct{ *capnp.Future }
 func (f ByteStream_write_Params_Future) Struct() (ByteStream_write_Params, error) {
 	p, err := f.Future.Ptr()
 	return ByteStream_write_Params(p.Struct()), err
-}
-
-type ByteStream_write_Results capnp.Struct
-
-// ByteStream_write_Results_TypeID is the unique identifier for the type ByteStream_write_Results.
-const ByteStream_write_Results_TypeID = 0xc83ddbd6c9dfeb23
-
-func NewByteStream_write_Results(s *capnp.Segment) (ByteStream_write_Results, error) {
-	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
-	return ByteStream_write_Results(st), err
-}
-
-func NewRootByteStream_write_Results(s *capnp.Segment) (ByteStream_write_Results, error) {
-	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
-	return ByteStream_write_Results(st), err
-}
-
-func ReadRootByteStream_write_Results(msg *capnp.Message) (ByteStream_write_Results, error) {
-	root, err := msg.Root()
-	return ByteStream_write_Results(root.Struct()), err
-}
-
-func (s ByteStream_write_Results) String() string {
-	str, _ := text.Marshal(0xc83ddbd6c9dfeb23, capnp.Struct(s))
-	return str
-}
-
-func (s ByteStream_write_Results) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
-	return capnp.Struct(s).EncodeAsPtr(seg)
-}
-
-func (ByteStream_write_Results) DecodeFromPtr(p capnp.Ptr) ByteStream_write_Results {
-	return ByteStream_write_Results(capnp.Struct{}.DecodeFromPtr(p))
-}
-
-func (s ByteStream_write_Results) ToPtr() capnp.Ptr {
-	return capnp.Struct(s).ToPtr()
-}
-func (s ByteStream_write_Results) IsValid() bool {
-	return capnp.Struct(s).IsValid()
-}
-
-func (s ByteStream_write_Results) Message() *capnp.Message {
-	return capnp.Struct(s).Message()
-}
-
-func (s ByteStream_write_Results) Segment() *capnp.Segment {
-	return capnp.Struct(s).Segment()
-}
-
-// ByteStream_write_Results_List is a list of ByteStream_write_Results.
-type ByteStream_write_Results_List = capnp.StructList[ByteStream_write_Results]
-
-// NewByteStream_write_Results creates a new list of ByteStream_write_Results.
-func NewByteStream_write_Results_List(s *capnp.Segment, sz int32) (ByteStream_write_Results_List, error) {
-	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0}, sz)
-	return capnp.StructList[ByteStream_write_Results](l), err
-}
-
-// ByteStream_write_Results_Future is a wrapper for a ByteStream_write_Results promised by a client call.
-type ByteStream_write_Results_Future struct{ *capnp.Future }
-
-func (f ByteStream_write_Results_Future) Struct() (ByteStream_write_Results, error) {
-	p, err := f.Future.Ptr()
-	return ByteStream_write_Results(p.Struct()), err
 }
 
 type ByteStream_done_Params capnp.Struct
@@ -495,48 +429,901 @@ func (f ByteStream_done_Results_Future) Struct() (ByteStream_done_Results, error
 	return ByteStream_done_Results(p.Struct()), err
 }
 
+type Debug capnp.Client
+
+// Debug_TypeID is the unique identifier for the type Debug.
+const Debug_TypeID = 0x9bfe39fa0de18382
+
+func (c Debug) Ping(ctx context.Context, params func(Debug_ping_Params) error) (Debug_ping_Results_Future, capnp.ReleaseFunc) {
+
+	s := capnp.Send{
+		Method: capnp.Method{
+			InterfaceID:   0x9bfe39fa0de18382,
+			MethodID:      0,
+			InterfaceName: "capnp/agent.capnp:Debug",
+			MethodName:    "ping",
+		},
+	}
+	if params != nil {
+		s.ArgsSize = capnp.ObjectSize{DataSize: 0, PointerCount: 0}
+		s.PlaceArgs = func(s capnp.Struct) error { return params(Debug_ping_Params(s)) }
+	}
+
+	ans, release := capnp.Client(c).SendCall(ctx, s)
+	return Debug_ping_Results_Future{Future: ans.Future()}, release
+
+}
+
+func (c Debug) OpenByteStream(ctx context.Context, params func(Debug_openByteStream_Params) error) (Debug_openByteStream_Results_Future, capnp.ReleaseFunc) {
+
+	s := capnp.Send{
+		Method: capnp.Method{
+			InterfaceID:   0x9bfe39fa0de18382,
+			MethodID:      1,
+			InterfaceName: "capnp/agent.capnp:Debug",
+			MethodName:    "openByteStream",
+		},
+	}
+	if params != nil {
+		s.ArgsSize = capnp.ObjectSize{DataSize: 0, PointerCount: 0}
+		s.PlaceArgs = func(s capnp.Struct) error { return params(Debug_openByteStream_Params(s)) }
+	}
+
+	ans, release := capnp.Client(c).SendCall(ctx, s)
+	return Debug_openByteStream_Results_Future{Future: ans.Future()}, release
+
+}
+
+func (c Debug) WaitStreaming() error {
+	return capnp.Client(c).WaitStreaming()
+}
+
+// String returns a string that identifies this capability for debugging
+// purposes.  Its format should not be depended on: in particular, it
+// should not be used to compare clients.  Use IsSame to compare clients
+// for equality.
+func (c Debug) String() string {
+	return "Debug(" + capnp.Client(c).String() + ")"
+}
+
+// AddRef creates a new Client that refers to the same capability as c.
+// If c is nil or has resolved to null, then AddRef returns nil.
+func (c Debug) AddRef() Debug {
+	return Debug(capnp.Client(c).AddRef())
+}
+
+// Release releases a capability reference.  If this is the last
+// reference to the capability, then the underlying resources associated
+// with the capability will be released.
+//
+// Release will panic if c has already been released, but not if c is
+// nil or resolved to null.
+func (c Debug) Release() {
+	capnp.Client(c).Release()
+}
+
+// Resolve blocks until the capability is fully resolved or the Context
+// expires.
+func (c Debug) Resolve(ctx context.Context) error {
+	return capnp.Client(c).Resolve(ctx)
+}
+
+func (c Debug) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Client(c).EncodeAsPtr(seg)
+}
+
+func (Debug) DecodeFromPtr(p capnp.Ptr) Debug {
+	return Debug(capnp.Client{}.DecodeFromPtr(p))
+}
+
+// IsValid reports whether c is a valid reference to a capability.
+// A reference is invalid if it is nil, has resolved to null, or has
+// been released.
+func (c Debug) IsValid() bool {
+	return capnp.Client(c).IsValid()
+}
+
+// IsSame reports whether c and other refer to a capability created by the
+// same call to NewClient.  This can return false negatives if c or other
+// are not fully resolved: use Resolve if this is an issue.  If either
+// c or other are released, then IsSame panics.
+func (c Debug) IsSame(other Debug) bool {
+	return capnp.Client(c).IsSame(capnp.Client(other))
+}
+
+// Update the flowcontrol.FlowLimiter used to manage flow control for
+// this client. This affects all future calls, but not calls already
+// waiting to send. Passing nil sets the value to flowcontrol.NopLimiter,
+// which is also the default.
+func (c Debug) SetFlowLimiter(lim fc.FlowLimiter) {
+	capnp.Client(c).SetFlowLimiter(lim)
+}
+
+// Get the current flowcontrol.FlowLimiter used to manage flow control
+// for this client.
+func (c Debug) GetFlowLimiter() fc.FlowLimiter {
+	return capnp.Client(c).GetFlowLimiter()
+}
+
+// A Debug_Server is a Debug with a local implementation.
+type Debug_Server interface {
+	Ping(context.Context, Debug_ping) error
+
+	OpenByteStream(context.Context, Debug_openByteStream) error
+}
+
+// Debug_NewServer creates a new Server from an implementation of Debug_Server.
+func Debug_NewServer(s Debug_Server) *server.Server {
+	c, _ := s.(server.Shutdowner)
+	return server.New(Debug_Methods(nil, s), s, c)
+}
+
+// Debug_ServerToClient creates a new Client from an implementation of Debug_Server.
+// The caller is responsible for calling Release on the returned Client.
+func Debug_ServerToClient(s Debug_Server) Debug {
+	return Debug(capnp.NewClient(Debug_NewServer(s)))
+}
+
+// Debug_Methods appends Methods to a slice that invoke the methods on s.
+// This can be used to create a more complicated Server.
+func Debug_Methods(methods []server.Method, s Debug_Server) []server.Method {
+	if cap(methods) == 0 {
+		methods = make([]server.Method, 0, 2)
+	}
+
+	methods = append(methods, server.Method{
+		Method: capnp.Method{
+			InterfaceID:   0x9bfe39fa0de18382,
+			MethodID:      0,
+			InterfaceName: "capnp/agent.capnp:Debug",
+			MethodName:    "ping",
+		},
+		Impl: func(ctx context.Context, call *server.Call) error {
+			return s.Ping(ctx, Debug_ping{call})
+		},
+	})
+
+	methods = append(methods, server.Method{
+		Method: capnp.Method{
+			InterfaceID:   0x9bfe39fa0de18382,
+			MethodID:      1,
+			InterfaceName: "capnp/agent.capnp:Debug",
+			MethodName:    "openByteStream",
+		},
+		Impl: func(ctx context.Context, call *server.Call) error {
+			return s.OpenByteStream(ctx, Debug_openByteStream{call})
+		},
+	})
+
+	return methods
+}
+
+// Debug_ping holds the state for a server call to Debug.ping.
+// See server.Call for documentation.
+type Debug_ping struct {
+	*server.Call
+}
+
+// Args returns the call's arguments.
+func (c Debug_ping) Args() Debug_ping_Params {
+	return Debug_ping_Params(c.Call.Args())
+}
+
+// AllocResults allocates the results struct.
+func (c Debug_ping) AllocResults() (Debug_ping_Results, error) {
+	r, err := c.Call.AllocResults(capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return Debug_ping_Results(r), err
+}
+
+// Debug_openByteStream holds the state for a server call to Debug.openByteStream.
+// See server.Call for documentation.
+type Debug_openByteStream struct {
+	*server.Call
+}
+
+// Args returns the call's arguments.
+func (c Debug_openByteStream) Args() Debug_openByteStream_Params {
+	return Debug_openByteStream_Params(c.Call.Args())
+}
+
+// AllocResults allocates the results struct.
+func (c Debug_openByteStream) AllocResults() (Debug_openByteStream_Results, error) {
+	r, err := c.Call.AllocResults(capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return Debug_openByteStream_Results(r), err
+}
+
+// Debug_List is a list of Debug.
+type Debug_List = capnp.CapList[Debug]
+
+// NewDebug_List creates a new list of Debug.
+func NewDebug_List(s *capnp.Segment, sz int32) (Debug_List, error) {
+	l, err := capnp.NewPointerList(s, sz)
+	return capnp.CapList[Debug](l), err
+}
+
+type Debug_ping_Params capnp.Struct
+
+// Debug_ping_Params_TypeID is the unique identifier for the type Debug_ping_Params.
+const Debug_ping_Params_TypeID = 0xba2d83d3bac29188
+
+func NewDebug_ping_Params(s *capnp.Segment) (Debug_ping_Params, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Debug_ping_Params(st), err
+}
+
+func NewRootDebug_ping_Params(s *capnp.Segment) (Debug_ping_Params, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Debug_ping_Params(st), err
+}
+
+func ReadRootDebug_ping_Params(msg *capnp.Message) (Debug_ping_Params, error) {
+	root, err := msg.Root()
+	return Debug_ping_Params(root.Struct()), err
+}
+
+func (s Debug_ping_Params) String() string {
+	str, _ := text.Marshal(0xba2d83d3bac29188, capnp.Struct(s))
+	return str
+}
+
+func (s Debug_ping_Params) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Debug_ping_Params) DecodeFromPtr(p capnp.Ptr) Debug_ping_Params {
+	return Debug_ping_Params(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Debug_ping_Params) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Debug_ping_Params) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Debug_ping_Params) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Debug_ping_Params) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+
+// Debug_ping_Params_List is a list of Debug_ping_Params.
+type Debug_ping_Params_List = capnp.StructList[Debug_ping_Params]
+
+// NewDebug_ping_Params creates a new list of Debug_ping_Params.
+func NewDebug_ping_Params_List(s *capnp.Segment, sz int32) (Debug_ping_Params_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0}, sz)
+	return capnp.StructList[Debug_ping_Params](l), err
+}
+
+// Debug_ping_Params_Future is a wrapper for a Debug_ping_Params promised by a client call.
+type Debug_ping_Params_Future struct{ *capnp.Future }
+
+func (f Debug_ping_Params_Future) Struct() (Debug_ping_Params, error) {
+	p, err := f.Future.Ptr()
+	return Debug_ping_Params(p.Struct()), err
+}
+
+type Debug_ping_Results capnp.Struct
+
+// Debug_ping_Results_TypeID is the unique identifier for the type Debug_ping_Results.
+const Debug_ping_Results_TypeID = 0xc21543481a853078
+
+func NewDebug_ping_Results(s *capnp.Segment) (Debug_ping_Results, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return Debug_ping_Results(st), err
+}
+
+func NewRootDebug_ping_Results(s *capnp.Segment) (Debug_ping_Results, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return Debug_ping_Results(st), err
+}
+
+func ReadRootDebug_ping_Results(msg *capnp.Message) (Debug_ping_Results, error) {
+	root, err := msg.Root()
+	return Debug_ping_Results(root.Struct()), err
+}
+
+func (s Debug_ping_Results) String() string {
+	str, _ := text.Marshal(0xc21543481a853078, capnp.Struct(s))
+	return str
+}
+
+func (s Debug_ping_Results) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Debug_ping_Results) DecodeFromPtr(p capnp.Ptr) Debug_ping_Results {
+	return Debug_ping_Results(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Debug_ping_Results) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Debug_ping_Results) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Debug_ping_Results) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Debug_ping_Results) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+func (s Debug_ping_Results) Message_() (string, error) {
+	p, err := capnp.Struct(s).Ptr(0)
+	return p.Text(), err
+}
+
+func (s Debug_ping_Results) HasMessage_() bool {
+	return capnp.Struct(s).HasPtr(0)
+}
+
+func (s Debug_ping_Results) Message_Bytes() ([]byte, error) {
+	p, err := capnp.Struct(s).Ptr(0)
+	return p.TextBytes(), err
+}
+
+func (s Debug_ping_Results) SetMessage_(v string) error {
+	return capnp.Struct(s).SetText(0, v)
+}
+
+// Debug_ping_Results_List is a list of Debug_ping_Results.
+type Debug_ping_Results_List = capnp.StructList[Debug_ping_Results]
+
+// NewDebug_ping_Results creates a new list of Debug_ping_Results.
+func NewDebug_ping_Results_List(s *capnp.Segment, sz int32) (Debug_ping_Results_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1}, sz)
+	return capnp.StructList[Debug_ping_Results](l), err
+}
+
+// Debug_ping_Results_Future is a wrapper for a Debug_ping_Results promised by a client call.
+type Debug_ping_Results_Future struct{ *capnp.Future }
+
+func (f Debug_ping_Results_Future) Struct() (Debug_ping_Results, error) {
+	p, err := f.Future.Ptr()
+	return Debug_ping_Results(p.Struct()), err
+}
+
+type Debug_openByteStream_Params capnp.Struct
+
+// Debug_openByteStream_Params_TypeID is the unique identifier for the type Debug_openByteStream_Params.
+const Debug_openByteStream_Params_TypeID = 0xa501244f0cecf79b
+
+func NewDebug_openByteStream_Params(s *capnp.Segment) (Debug_openByteStream_Params, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Debug_openByteStream_Params(st), err
+}
+
+func NewRootDebug_openByteStream_Params(s *capnp.Segment) (Debug_openByteStream_Params, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Debug_openByteStream_Params(st), err
+}
+
+func ReadRootDebug_openByteStream_Params(msg *capnp.Message) (Debug_openByteStream_Params, error) {
+	root, err := msg.Root()
+	return Debug_openByteStream_Params(root.Struct()), err
+}
+
+func (s Debug_openByteStream_Params) String() string {
+	str, _ := text.Marshal(0xa501244f0cecf79b, capnp.Struct(s))
+	return str
+}
+
+func (s Debug_openByteStream_Params) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Debug_openByteStream_Params) DecodeFromPtr(p capnp.Ptr) Debug_openByteStream_Params {
+	return Debug_openByteStream_Params(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Debug_openByteStream_Params) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Debug_openByteStream_Params) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Debug_openByteStream_Params) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Debug_openByteStream_Params) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+
+// Debug_openByteStream_Params_List is a list of Debug_openByteStream_Params.
+type Debug_openByteStream_Params_List = capnp.StructList[Debug_openByteStream_Params]
+
+// NewDebug_openByteStream_Params creates a new list of Debug_openByteStream_Params.
+func NewDebug_openByteStream_Params_List(s *capnp.Segment, sz int32) (Debug_openByteStream_Params_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0}, sz)
+	return capnp.StructList[Debug_openByteStream_Params](l), err
+}
+
+// Debug_openByteStream_Params_Future is a wrapper for a Debug_openByteStream_Params promised by a client call.
+type Debug_openByteStream_Params_Future struct{ *capnp.Future }
+
+func (f Debug_openByteStream_Params_Future) Struct() (Debug_openByteStream_Params, error) {
+	p, err := f.Future.Ptr()
+	return Debug_openByteStream_Params(p.Struct()), err
+}
+
+type Debug_openByteStream_Results capnp.Struct
+
+// Debug_openByteStream_Results_TypeID is the unique identifier for the type Debug_openByteStream_Results.
+const Debug_openByteStream_Results_TypeID = 0xd8528fc126c10ff9
+
+func NewDebug_openByteStream_Results(s *capnp.Segment) (Debug_openByteStream_Results, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return Debug_openByteStream_Results(st), err
+}
+
+func NewRootDebug_openByteStream_Results(s *capnp.Segment) (Debug_openByteStream_Results, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return Debug_openByteStream_Results(st), err
+}
+
+func ReadRootDebug_openByteStream_Results(msg *capnp.Message) (Debug_openByteStream_Results, error) {
+	root, err := msg.Root()
+	return Debug_openByteStream_Results(root.Struct()), err
+}
+
+func (s Debug_openByteStream_Results) String() string {
+	str, _ := text.Marshal(0xd8528fc126c10ff9, capnp.Struct(s))
+	return str
+}
+
+func (s Debug_openByteStream_Results) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Debug_openByteStream_Results) DecodeFromPtr(p capnp.Ptr) Debug_openByteStream_Results {
+	return Debug_openByteStream_Results(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Debug_openByteStream_Results) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Debug_openByteStream_Results) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Debug_openByteStream_Results) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Debug_openByteStream_Results) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+func (s Debug_openByteStream_Results) Stream() ByteStream {
+	p, _ := capnp.Struct(s).Ptr(0)
+	return ByteStream(p.Interface().Client())
+}
+
+func (s Debug_openByteStream_Results) HasStream() bool {
+	return capnp.Struct(s).HasPtr(0)
+}
+
+func (s Debug_openByteStream_Results) SetStream(v ByteStream) error {
+	if !v.IsValid() {
+		return capnp.Struct(s).SetPtr(0, capnp.Ptr{})
+	}
+	seg := s.Segment()
+	in := capnp.NewInterface(seg, seg.Message().CapTable().Add(capnp.Client(v)))
+	return capnp.Struct(s).SetPtr(0, in.ToPtr())
+}
+
+// Debug_openByteStream_Results_List is a list of Debug_openByteStream_Results.
+type Debug_openByteStream_Results_List = capnp.StructList[Debug_openByteStream_Results]
+
+// NewDebug_openByteStream_Results creates a new list of Debug_openByteStream_Results.
+func NewDebug_openByteStream_Results_List(s *capnp.Segment, sz int32) (Debug_openByteStream_Results_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1}, sz)
+	return capnp.StructList[Debug_openByteStream_Results](l), err
+}
+
+// Debug_openByteStream_Results_Future is a wrapper for a Debug_openByteStream_Results promised by a client call.
+type Debug_openByteStream_Results_Future struct{ *capnp.Future }
+
+func (f Debug_openByteStream_Results_Future) Struct() (Debug_openByteStream_Results, error) {
+	p, err := f.Future.Ptr()
+	return Debug_openByteStream_Results(p.Struct()), err
+}
+func (p Debug_openByteStream_Results_Future) Stream() ByteStream {
+	return ByteStream(p.Future.Field(0, nil).Client())
+}
+
+type Network capnp.Client
+
+// Network_TypeID is the unique identifier for the type Network.
+const Network_TypeID = 0x9fe9a01a06e6f3f2
+
+func (c Network) ConfigureInterface(ctx context.Context, params func(Network_configureInterface_Params) error) (Network_configureInterface_Results_Future, capnp.ReleaseFunc) {
+
+	s := capnp.Send{
+		Method: capnp.Method{
+			InterfaceID:   0x9fe9a01a06e6f3f2,
+			MethodID:      0,
+			InterfaceName: "capnp/agent.capnp:Network",
+			MethodName:    "configureInterface",
+		},
+	}
+	if params != nil {
+		s.ArgsSize = capnp.ObjectSize{DataSize: 0, PointerCount: 3}
+		s.PlaceArgs = func(s capnp.Struct) error { return params(Network_configureInterface_Params(s)) }
+	}
+
+	ans, release := capnp.Client(c).SendCall(ctx, s)
+	return Network_configureInterface_Results_Future{Future: ans.Future()}, release
+
+}
+
+func (c Network) WaitStreaming() error {
+	return capnp.Client(c).WaitStreaming()
+}
+
+// String returns a string that identifies this capability for debugging
+// purposes.  Its format should not be depended on: in particular, it
+// should not be used to compare clients.  Use IsSame to compare clients
+// for equality.
+func (c Network) String() string {
+	return "Network(" + capnp.Client(c).String() + ")"
+}
+
+// AddRef creates a new Client that refers to the same capability as c.
+// If c is nil or has resolved to null, then AddRef returns nil.
+func (c Network) AddRef() Network {
+	return Network(capnp.Client(c).AddRef())
+}
+
+// Release releases a capability reference.  If this is the last
+// reference to the capability, then the underlying resources associated
+// with the capability will be released.
+//
+// Release will panic if c has already been released, but not if c is
+// nil or resolved to null.
+func (c Network) Release() {
+	capnp.Client(c).Release()
+}
+
+// Resolve blocks until the capability is fully resolved or the Context
+// expires.
+func (c Network) Resolve(ctx context.Context) error {
+	return capnp.Client(c).Resolve(ctx)
+}
+
+func (c Network) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Client(c).EncodeAsPtr(seg)
+}
+
+func (Network) DecodeFromPtr(p capnp.Ptr) Network {
+	return Network(capnp.Client{}.DecodeFromPtr(p))
+}
+
+// IsValid reports whether c is a valid reference to a capability.
+// A reference is invalid if it is nil, has resolved to null, or has
+// been released.
+func (c Network) IsValid() bool {
+	return capnp.Client(c).IsValid()
+}
+
+// IsSame reports whether c and other refer to a capability created by the
+// same call to NewClient.  This can return false negatives if c or other
+// are not fully resolved: use Resolve if this is an issue.  If either
+// c or other are released, then IsSame panics.
+func (c Network) IsSame(other Network) bool {
+	return capnp.Client(c).IsSame(capnp.Client(other))
+}
+
+// Update the flowcontrol.FlowLimiter used to manage flow control for
+// this client. This affects all future calls, but not calls already
+// waiting to send. Passing nil sets the value to flowcontrol.NopLimiter,
+// which is also the default.
+func (c Network) SetFlowLimiter(lim fc.FlowLimiter) {
+	capnp.Client(c).SetFlowLimiter(lim)
+}
+
+// Get the current flowcontrol.FlowLimiter used to manage flow control
+// for this client.
+func (c Network) GetFlowLimiter() fc.FlowLimiter {
+	return capnp.Client(c).GetFlowLimiter()
+}
+
+// A Network_Server is a Network with a local implementation.
+type Network_Server interface {
+	ConfigureInterface(context.Context, Network_configureInterface) error
+}
+
+// Network_NewServer creates a new Server from an implementation of Network_Server.
+func Network_NewServer(s Network_Server) *server.Server {
+	c, _ := s.(server.Shutdowner)
+	return server.New(Network_Methods(nil, s), s, c)
+}
+
+// Network_ServerToClient creates a new Client from an implementation of Network_Server.
+// The caller is responsible for calling Release on the returned Client.
+func Network_ServerToClient(s Network_Server) Network {
+	return Network(capnp.NewClient(Network_NewServer(s)))
+}
+
+// Network_Methods appends Methods to a slice that invoke the methods on s.
+// This can be used to create a more complicated Server.
+func Network_Methods(methods []server.Method, s Network_Server) []server.Method {
+	if cap(methods) == 0 {
+		methods = make([]server.Method, 0, 1)
+	}
+
+	methods = append(methods, server.Method{
+		Method: capnp.Method{
+			InterfaceID:   0x9fe9a01a06e6f3f2,
+			MethodID:      0,
+			InterfaceName: "capnp/agent.capnp:Network",
+			MethodName:    "configureInterface",
+		},
+		Impl: func(ctx context.Context, call *server.Call) error {
+			return s.ConfigureInterface(ctx, Network_configureInterface{call})
+		},
+	})
+
+	return methods
+}
+
+// Network_configureInterface holds the state for a server call to Network.configureInterface.
+// See server.Call for documentation.
+type Network_configureInterface struct {
+	*server.Call
+}
+
+// Args returns the call's arguments.
+func (c Network_configureInterface) Args() Network_configureInterface_Params {
+	return Network_configureInterface_Params(c.Call.Args())
+}
+
+// AllocResults allocates the results struct.
+func (c Network_configureInterface) AllocResults() (Network_configureInterface_Results, error) {
+	r, err := c.Call.AllocResults(capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Network_configureInterface_Results(r), err
+}
+
+// Network_List is a list of Network.
+type Network_List = capnp.CapList[Network]
+
+// NewNetwork_List creates a new list of Network.
+func NewNetwork_List(s *capnp.Segment, sz int32) (Network_List, error) {
+	l, err := capnp.NewPointerList(s, sz)
+	return capnp.CapList[Network](l), err
+}
+
+type Network_configureInterface_Params capnp.Struct
+
+// Network_configureInterface_Params_TypeID is the unique identifier for the type Network_configureInterface_Params.
+const Network_configureInterface_Params_TypeID = 0xaaec55c0254f1c1b
+
+func NewNetwork_configureInterface_Params(s *capnp.Segment) (Network_configureInterface_Params, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 3})
+	return Network_configureInterface_Params(st), err
+}
+
+func NewRootNetwork_configureInterface_Params(s *capnp.Segment) (Network_configureInterface_Params, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 3})
+	return Network_configureInterface_Params(st), err
+}
+
+func ReadRootNetwork_configureInterface_Params(msg *capnp.Message) (Network_configureInterface_Params, error) {
+	root, err := msg.Root()
+	return Network_configureInterface_Params(root.Struct()), err
+}
+
+func (s Network_configureInterface_Params) String() string {
+	str, _ := text.Marshal(0xaaec55c0254f1c1b, capnp.Struct(s))
+	return str
+}
+
+func (s Network_configureInterface_Params) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Network_configureInterface_Params) DecodeFromPtr(p capnp.Ptr) Network_configureInterface_Params {
+	return Network_configureInterface_Params(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Network_configureInterface_Params) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Network_configureInterface_Params) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Network_configureInterface_Params) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Network_configureInterface_Params) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+func (s Network_configureInterface_Params) IfName() (string, error) {
+	p, err := capnp.Struct(s).Ptr(0)
+	return p.Text(), err
+}
+
+func (s Network_configureInterface_Params) HasIfName() bool {
+	return capnp.Struct(s).HasPtr(0)
+}
+
+func (s Network_configureInterface_Params) IfNameBytes() ([]byte, error) {
+	p, err := capnp.Struct(s).Ptr(0)
+	return p.TextBytes(), err
+}
+
+func (s Network_configureInterface_Params) SetIfName(v string) error {
+	return capnp.Struct(s).SetText(0, v)
+}
+
+func (s Network_configureInterface_Params) Cidr() (string, error) {
+	p, err := capnp.Struct(s).Ptr(1)
+	return p.Text(), err
+}
+
+func (s Network_configureInterface_Params) HasCidr() bool {
+	return capnp.Struct(s).HasPtr(1)
+}
+
+func (s Network_configureInterface_Params) CidrBytes() ([]byte, error) {
+	p, err := capnp.Struct(s).Ptr(1)
+	return p.TextBytes(), err
+}
+
+func (s Network_configureInterface_Params) SetCidr(v string) error {
+	return capnp.Struct(s).SetText(1, v)
+}
+
+func (s Network_configureInterface_Params) Gateway() (string, error) {
+	p, err := capnp.Struct(s).Ptr(2)
+	return p.Text(), err
+}
+
+func (s Network_configureInterface_Params) HasGateway() bool {
+	return capnp.Struct(s).HasPtr(2)
+}
+
+func (s Network_configureInterface_Params) GatewayBytes() ([]byte, error) {
+	p, err := capnp.Struct(s).Ptr(2)
+	return p.TextBytes(), err
+}
+
+func (s Network_configureInterface_Params) SetGateway(v string) error {
+	return capnp.Struct(s).SetText(2, v)
+}
+
+// Network_configureInterface_Params_List is a list of Network_configureInterface_Params.
+type Network_configureInterface_Params_List = capnp.StructList[Network_configureInterface_Params]
+
+// NewNetwork_configureInterface_Params creates a new list of Network_configureInterface_Params.
+func NewNetwork_configureInterface_Params_List(s *capnp.Segment, sz int32) (Network_configureInterface_Params_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 3}, sz)
+	return capnp.StructList[Network_configureInterface_Params](l), err
+}
+
+// Network_configureInterface_Params_Future is a wrapper for a Network_configureInterface_Params promised by a client call.
+type Network_configureInterface_Params_Future struct{ *capnp.Future }
+
+func (f Network_configureInterface_Params_Future) Struct() (Network_configureInterface_Params, error) {
+	p, err := f.Future.Ptr()
+	return Network_configureInterface_Params(p.Struct()), err
+}
+
+type Network_configureInterface_Results capnp.Struct
+
+// Network_configureInterface_Results_TypeID is the unique identifier for the type Network_configureInterface_Results.
+const Network_configureInterface_Results_TypeID = 0xd8320c178a73a4db
+
+func NewNetwork_configureInterface_Results(s *capnp.Segment) (Network_configureInterface_Results, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Network_configureInterface_Results(st), err
+}
+
+func NewRootNetwork_configureInterface_Results(s *capnp.Segment) (Network_configureInterface_Results, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Network_configureInterface_Results(st), err
+}
+
+func ReadRootNetwork_configureInterface_Results(msg *capnp.Message) (Network_configureInterface_Results, error) {
+	root, err := msg.Root()
+	return Network_configureInterface_Results(root.Struct()), err
+}
+
+func (s Network_configureInterface_Results) String() string {
+	str, _ := text.Marshal(0xd8320c178a73a4db, capnp.Struct(s))
+	return str
+}
+
+func (s Network_configureInterface_Results) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Network_configureInterface_Results) DecodeFromPtr(p capnp.Ptr) Network_configureInterface_Results {
+	return Network_configureInterface_Results(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Network_configureInterface_Results) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Network_configureInterface_Results) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Network_configureInterface_Results) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Network_configureInterface_Results) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+
+// Network_configureInterface_Results_List is a list of Network_configureInterface_Results.
+type Network_configureInterface_Results_List = capnp.StructList[Network_configureInterface_Results]
+
+// NewNetwork_configureInterface_Results creates a new list of Network_configureInterface_Results.
+func NewNetwork_configureInterface_Results_List(s *capnp.Segment, sz int32) (Network_configureInterface_Results_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0}, sz)
+	return capnp.StructList[Network_configureInterface_Results](l), err
+}
+
+// Network_configureInterface_Results_Future is a wrapper for a Network_configureInterface_Results promised by a client call.
+type Network_configureInterface_Results_Future struct{ *capnp.Future }
+
+func (f Network_configureInterface_Results_Future) Struct() (Network_configureInterface_Results, error) {
+	p, err := f.Future.Ptr()
+	return Network_configureInterface_Results(p.Struct()), err
+}
+
 type Agent capnp.Client
 
 // Agent_TypeID is the unique identifier for the type Agent.
 const Agent_TypeID = 0x87e7b4ba75da6311
 
-func (c Agent) Ping(ctx context.Context, params func(Agent_ping_Params) error) (Agent_ping_Results_Future, capnp.ReleaseFunc) {
+func (c Agent) Debug(ctx context.Context, params func(Agent_debug_Params) error) (Agent_debug_Results_Future, capnp.ReleaseFunc) {
 
 	s := capnp.Send{
 		Method: capnp.Method{
 			InterfaceID:   0x87e7b4ba75da6311,
 			MethodID:      0,
 			InterfaceName: "capnp/agent.capnp:Agent",
-			MethodName:    "ping",
+			MethodName:    "debug",
 		},
 	}
 	if params != nil {
 		s.ArgsSize = capnp.ObjectSize{DataSize: 0, PointerCount: 0}
-		s.PlaceArgs = func(s capnp.Struct) error { return params(Agent_ping_Params(s)) }
+		s.PlaceArgs = func(s capnp.Struct) error { return params(Agent_debug_Params(s)) }
 	}
 
 	ans, release := capnp.Client(c).SendCall(ctx, s)
-	return Agent_ping_Results_Future{Future: ans.Future()}, release
+	return Agent_debug_Results_Future{Future: ans.Future()}, release
 
 }
 
-func (c Agent) OpenByteStream(ctx context.Context, params func(Agent_openByteStream_Params) error) (Agent_openByteStream_Results_Future, capnp.ReleaseFunc) {
+func (c Agent) Network(ctx context.Context, params func(Agent_network_Params) error) (Agent_network_Results_Future, capnp.ReleaseFunc) {
 
 	s := capnp.Send{
 		Method: capnp.Method{
 			InterfaceID:   0x87e7b4ba75da6311,
 			MethodID:      1,
 			InterfaceName: "capnp/agent.capnp:Agent",
-			MethodName:    "openByteStream",
+			MethodName:    "network",
 		},
 	}
 	if params != nil {
 		s.ArgsSize = capnp.ObjectSize{DataSize: 0, PointerCount: 0}
-		s.PlaceArgs = func(s capnp.Struct) error { return params(Agent_openByteStream_Params(s)) }
+		s.PlaceArgs = func(s capnp.Struct) error { return params(Agent_network_Params(s)) }
 	}
 
 	ans, release := capnp.Client(c).SendCall(ctx, s)
-	return Agent_openByteStream_Results_Future{Future: ans.Future()}, release
+	return Agent_network_Results_Future{Future: ans.Future()}, release
 
 }
 
@@ -613,9 +1400,9 @@ func (c Agent) GetFlowLimiter() fc.FlowLimiter {
 
 // A Agent_Server is a Agent with a local implementation.
 type Agent_Server interface {
-	Ping(context.Context, Agent_ping) error
+	Debug(context.Context, Agent_debug) error
 
-	OpenByteStream(context.Context, Agent_openByteStream) error
+	Network(context.Context, Agent_network) error
 }
 
 // Agent_NewServer creates a new Server from an implementation of Agent_Server.
@@ -642,10 +1429,10 @@ func Agent_Methods(methods []server.Method, s Agent_Server) []server.Method {
 			InterfaceID:   0x87e7b4ba75da6311,
 			MethodID:      0,
 			InterfaceName: "capnp/agent.capnp:Agent",
-			MethodName:    "ping",
+			MethodName:    "debug",
 		},
 		Impl: func(ctx context.Context, call *server.Call) error {
-			return s.Ping(ctx, Agent_ping{call})
+			return s.Debug(ctx, Agent_debug{call})
 		},
 	})
 
@@ -654,48 +1441,48 @@ func Agent_Methods(methods []server.Method, s Agent_Server) []server.Method {
 			InterfaceID:   0x87e7b4ba75da6311,
 			MethodID:      1,
 			InterfaceName: "capnp/agent.capnp:Agent",
-			MethodName:    "openByteStream",
+			MethodName:    "network",
 		},
 		Impl: func(ctx context.Context, call *server.Call) error {
-			return s.OpenByteStream(ctx, Agent_openByteStream{call})
+			return s.Network(ctx, Agent_network{call})
 		},
 	})
 
 	return methods
 }
 
-// Agent_ping holds the state for a server call to Agent.ping.
+// Agent_debug holds the state for a server call to Agent.debug.
 // See server.Call for documentation.
-type Agent_ping struct {
+type Agent_debug struct {
 	*server.Call
 }
 
 // Args returns the call's arguments.
-func (c Agent_ping) Args() Agent_ping_Params {
-	return Agent_ping_Params(c.Call.Args())
+func (c Agent_debug) Args() Agent_debug_Params {
+	return Agent_debug_Params(c.Call.Args())
 }
 
 // AllocResults allocates the results struct.
-func (c Agent_ping) AllocResults() (Agent_ping_Results, error) {
+func (c Agent_debug) AllocResults() (Agent_debug_Results, error) {
 	r, err := c.Call.AllocResults(capnp.ObjectSize{DataSize: 0, PointerCount: 1})
-	return Agent_ping_Results(r), err
+	return Agent_debug_Results(r), err
 }
 
-// Agent_openByteStream holds the state for a server call to Agent.openByteStream.
+// Agent_network holds the state for a server call to Agent.network.
 // See server.Call for documentation.
-type Agent_openByteStream struct {
+type Agent_network struct {
 	*server.Call
 }
 
 // Args returns the call's arguments.
-func (c Agent_openByteStream) Args() Agent_openByteStream_Params {
-	return Agent_openByteStream_Params(c.Call.Args())
+func (c Agent_network) Args() Agent_network_Params {
+	return Agent_network_Params(c.Call.Args())
 }
 
 // AllocResults allocates the results struct.
-func (c Agent_openByteStream) AllocResults() (Agent_openByteStream_Results, error) {
+func (c Agent_network) AllocResults() (Agent_network_Results, error) {
 	r, err := c.Call.AllocResults(capnp.ObjectSize{DataSize: 0, PointerCount: 1})
-	return Agent_openByteStream_Results(r), err
+	return Agent_network_Results(r), err
 }
 
 // Agent_List is a list of Agent.
@@ -707,275 +1494,128 @@ func NewAgent_List(s *capnp.Segment, sz int32) (Agent_List, error) {
 	return capnp.CapList[Agent](l), err
 }
 
-type Agent_ping_Params capnp.Struct
+type Agent_debug_Params capnp.Struct
 
-// Agent_ping_Params_TypeID is the unique identifier for the type Agent_ping_Params.
-const Agent_ping_Params_TypeID = 0xd24f141e29f56191
+// Agent_debug_Params_TypeID is the unique identifier for the type Agent_debug_Params.
+const Agent_debug_Params_TypeID = 0xd24f141e29f56191
 
-func NewAgent_ping_Params(s *capnp.Segment) (Agent_ping_Params, error) {
+func NewAgent_debug_Params(s *capnp.Segment) (Agent_debug_Params, error) {
 	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
-	return Agent_ping_Params(st), err
+	return Agent_debug_Params(st), err
 }
 
-func NewRootAgent_ping_Params(s *capnp.Segment) (Agent_ping_Params, error) {
+func NewRootAgent_debug_Params(s *capnp.Segment) (Agent_debug_Params, error) {
 	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
-	return Agent_ping_Params(st), err
+	return Agent_debug_Params(st), err
 }
 
-func ReadRootAgent_ping_Params(msg *capnp.Message) (Agent_ping_Params, error) {
+func ReadRootAgent_debug_Params(msg *capnp.Message) (Agent_debug_Params, error) {
 	root, err := msg.Root()
-	return Agent_ping_Params(root.Struct()), err
+	return Agent_debug_Params(root.Struct()), err
 }
 
-func (s Agent_ping_Params) String() string {
+func (s Agent_debug_Params) String() string {
 	str, _ := text.Marshal(0xd24f141e29f56191, capnp.Struct(s))
 	return str
 }
 
-func (s Agent_ping_Params) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+func (s Agent_debug_Params) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
 	return capnp.Struct(s).EncodeAsPtr(seg)
 }
 
-func (Agent_ping_Params) DecodeFromPtr(p capnp.Ptr) Agent_ping_Params {
-	return Agent_ping_Params(capnp.Struct{}.DecodeFromPtr(p))
+func (Agent_debug_Params) DecodeFromPtr(p capnp.Ptr) Agent_debug_Params {
+	return Agent_debug_Params(capnp.Struct{}.DecodeFromPtr(p))
 }
 
-func (s Agent_ping_Params) ToPtr() capnp.Ptr {
+func (s Agent_debug_Params) ToPtr() capnp.Ptr {
 	return capnp.Struct(s).ToPtr()
 }
-func (s Agent_ping_Params) IsValid() bool {
+func (s Agent_debug_Params) IsValid() bool {
 	return capnp.Struct(s).IsValid()
 }
 
-func (s Agent_ping_Params) Message() *capnp.Message {
+func (s Agent_debug_Params) Message() *capnp.Message {
 	return capnp.Struct(s).Message()
 }
 
-func (s Agent_ping_Params) Segment() *capnp.Segment {
+func (s Agent_debug_Params) Segment() *capnp.Segment {
 	return capnp.Struct(s).Segment()
 }
 
-// Agent_ping_Params_List is a list of Agent_ping_Params.
-type Agent_ping_Params_List = capnp.StructList[Agent_ping_Params]
+// Agent_debug_Params_List is a list of Agent_debug_Params.
+type Agent_debug_Params_List = capnp.StructList[Agent_debug_Params]
 
-// NewAgent_ping_Params creates a new list of Agent_ping_Params.
-func NewAgent_ping_Params_List(s *capnp.Segment, sz int32) (Agent_ping_Params_List, error) {
+// NewAgent_debug_Params creates a new list of Agent_debug_Params.
+func NewAgent_debug_Params_List(s *capnp.Segment, sz int32) (Agent_debug_Params_List, error) {
 	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0}, sz)
-	return capnp.StructList[Agent_ping_Params](l), err
+	return capnp.StructList[Agent_debug_Params](l), err
 }
 
-// Agent_ping_Params_Future is a wrapper for a Agent_ping_Params promised by a client call.
-type Agent_ping_Params_Future struct{ *capnp.Future }
+// Agent_debug_Params_Future is a wrapper for a Agent_debug_Params promised by a client call.
+type Agent_debug_Params_Future struct{ *capnp.Future }
 
-func (f Agent_ping_Params_Future) Struct() (Agent_ping_Params, error) {
+func (f Agent_debug_Params_Future) Struct() (Agent_debug_Params, error) {
 	p, err := f.Future.Ptr()
-	return Agent_ping_Params(p.Struct()), err
+	return Agent_debug_Params(p.Struct()), err
 }
 
-type Agent_ping_Results capnp.Struct
+type Agent_debug_Results capnp.Struct
 
-// Agent_ping_Results_TypeID is the unique identifier for the type Agent_ping_Results.
-const Agent_ping_Results_TypeID = 0xf66219dcd10bae83
+// Agent_debug_Results_TypeID is the unique identifier for the type Agent_debug_Results.
+const Agent_debug_Results_TypeID = 0xf66219dcd10bae83
 
-func NewAgent_ping_Results(s *capnp.Segment) (Agent_ping_Results, error) {
+func NewAgent_debug_Results(s *capnp.Segment) (Agent_debug_Results, error) {
 	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
-	return Agent_ping_Results(st), err
+	return Agent_debug_Results(st), err
 }
 
-func NewRootAgent_ping_Results(s *capnp.Segment) (Agent_ping_Results, error) {
+func NewRootAgent_debug_Results(s *capnp.Segment) (Agent_debug_Results, error) {
 	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
-	return Agent_ping_Results(st), err
+	return Agent_debug_Results(st), err
 }
 
-func ReadRootAgent_ping_Results(msg *capnp.Message) (Agent_ping_Results, error) {
+func ReadRootAgent_debug_Results(msg *capnp.Message) (Agent_debug_Results, error) {
 	root, err := msg.Root()
-	return Agent_ping_Results(root.Struct()), err
+	return Agent_debug_Results(root.Struct()), err
 }
 
-func (s Agent_ping_Results) String() string {
+func (s Agent_debug_Results) String() string {
 	str, _ := text.Marshal(0xf66219dcd10bae83, capnp.Struct(s))
 	return str
 }
 
-func (s Agent_ping_Results) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+func (s Agent_debug_Results) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
 	return capnp.Struct(s).EncodeAsPtr(seg)
 }
 
-func (Agent_ping_Results) DecodeFromPtr(p capnp.Ptr) Agent_ping_Results {
-	return Agent_ping_Results(capnp.Struct{}.DecodeFromPtr(p))
+func (Agent_debug_Results) DecodeFromPtr(p capnp.Ptr) Agent_debug_Results {
+	return Agent_debug_Results(capnp.Struct{}.DecodeFromPtr(p))
 }
 
-func (s Agent_ping_Results) ToPtr() capnp.Ptr {
+func (s Agent_debug_Results) ToPtr() capnp.Ptr {
 	return capnp.Struct(s).ToPtr()
 }
-func (s Agent_ping_Results) IsValid() bool {
+func (s Agent_debug_Results) IsValid() bool {
 	return capnp.Struct(s).IsValid()
 }
 
-func (s Agent_ping_Results) Message() *capnp.Message {
+func (s Agent_debug_Results) Message() *capnp.Message {
 	return capnp.Struct(s).Message()
 }
 
-func (s Agent_ping_Results) Segment() *capnp.Segment {
+func (s Agent_debug_Results) Segment() *capnp.Segment {
 	return capnp.Struct(s).Segment()
 }
-func (s Agent_ping_Results) Message_() (string, error) {
-	p, err := capnp.Struct(s).Ptr(0)
-	return p.Text(), err
-}
-
-func (s Agent_ping_Results) HasMessage_() bool {
-	return capnp.Struct(s).HasPtr(0)
-}
-
-func (s Agent_ping_Results) Message_Bytes() ([]byte, error) {
-	p, err := capnp.Struct(s).Ptr(0)
-	return p.TextBytes(), err
-}
-
-func (s Agent_ping_Results) SetMessage_(v string) error {
-	return capnp.Struct(s).SetText(0, v)
-}
-
-// Agent_ping_Results_List is a list of Agent_ping_Results.
-type Agent_ping_Results_List = capnp.StructList[Agent_ping_Results]
-
-// NewAgent_ping_Results creates a new list of Agent_ping_Results.
-func NewAgent_ping_Results_List(s *capnp.Segment, sz int32) (Agent_ping_Results_List, error) {
-	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1}, sz)
-	return capnp.StructList[Agent_ping_Results](l), err
-}
-
-// Agent_ping_Results_Future is a wrapper for a Agent_ping_Results promised by a client call.
-type Agent_ping_Results_Future struct{ *capnp.Future }
-
-func (f Agent_ping_Results_Future) Struct() (Agent_ping_Results, error) {
-	p, err := f.Future.Ptr()
-	return Agent_ping_Results(p.Struct()), err
-}
-
-type Agent_openByteStream_Params capnp.Struct
-
-// Agent_openByteStream_Params_TypeID is the unique identifier for the type Agent_openByteStream_Params.
-const Agent_openByteStream_Params_TypeID = 0xac55a0efb669f5af
-
-func NewAgent_openByteStream_Params(s *capnp.Segment) (Agent_openByteStream_Params, error) {
-	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
-	return Agent_openByteStream_Params(st), err
-}
-
-func NewRootAgent_openByteStream_Params(s *capnp.Segment) (Agent_openByteStream_Params, error) {
-	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
-	return Agent_openByteStream_Params(st), err
-}
-
-func ReadRootAgent_openByteStream_Params(msg *capnp.Message) (Agent_openByteStream_Params, error) {
-	root, err := msg.Root()
-	return Agent_openByteStream_Params(root.Struct()), err
-}
-
-func (s Agent_openByteStream_Params) String() string {
-	str, _ := text.Marshal(0xac55a0efb669f5af, capnp.Struct(s))
-	return str
-}
-
-func (s Agent_openByteStream_Params) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
-	return capnp.Struct(s).EncodeAsPtr(seg)
-}
-
-func (Agent_openByteStream_Params) DecodeFromPtr(p capnp.Ptr) Agent_openByteStream_Params {
-	return Agent_openByteStream_Params(capnp.Struct{}.DecodeFromPtr(p))
-}
-
-func (s Agent_openByteStream_Params) ToPtr() capnp.Ptr {
-	return capnp.Struct(s).ToPtr()
-}
-func (s Agent_openByteStream_Params) IsValid() bool {
-	return capnp.Struct(s).IsValid()
-}
-
-func (s Agent_openByteStream_Params) Message() *capnp.Message {
-	return capnp.Struct(s).Message()
-}
-
-func (s Agent_openByteStream_Params) Segment() *capnp.Segment {
-	return capnp.Struct(s).Segment()
-}
-
-// Agent_openByteStream_Params_List is a list of Agent_openByteStream_Params.
-type Agent_openByteStream_Params_List = capnp.StructList[Agent_openByteStream_Params]
-
-// NewAgent_openByteStream_Params creates a new list of Agent_openByteStream_Params.
-func NewAgent_openByteStream_Params_List(s *capnp.Segment, sz int32) (Agent_openByteStream_Params_List, error) {
-	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0}, sz)
-	return capnp.StructList[Agent_openByteStream_Params](l), err
-}
-
-// Agent_openByteStream_Params_Future is a wrapper for a Agent_openByteStream_Params promised by a client call.
-type Agent_openByteStream_Params_Future struct{ *capnp.Future }
-
-func (f Agent_openByteStream_Params_Future) Struct() (Agent_openByteStream_Params, error) {
-	p, err := f.Future.Ptr()
-	return Agent_openByteStream_Params(p.Struct()), err
-}
-
-type Agent_openByteStream_Results capnp.Struct
-
-// Agent_openByteStream_Results_TypeID is the unique identifier for the type Agent_openByteStream_Results.
-const Agent_openByteStream_Results_TypeID = 0xf2d726cbb665a8f2
-
-func NewAgent_openByteStream_Results(s *capnp.Segment) (Agent_openByteStream_Results, error) {
-	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
-	return Agent_openByteStream_Results(st), err
-}
-
-func NewRootAgent_openByteStream_Results(s *capnp.Segment) (Agent_openByteStream_Results, error) {
-	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
-	return Agent_openByteStream_Results(st), err
-}
-
-func ReadRootAgent_openByteStream_Results(msg *capnp.Message) (Agent_openByteStream_Results, error) {
-	root, err := msg.Root()
-	return Agent_openByteStream_Results(root.Struct()), err
-}
-
-func (s Agent_openByteStream_Results) String() string {
-	str, _ := text.Marshal(0xf2d726cbb665a8f2, capnp.Struct(s))
-	return str
-}
-
-func (s Agent_openByteStream_Results) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
-	return capnp.Struct(s).EncodeAsPtr(seg)
-}
-
-func (Agent_openByteStream_Results) DecodeFromPtr(p capnp.Ptr) Agent_openByteStream_Results {
-	return Agent_openByteStream_Results(capnp.Struct{}.DecodeFromPtr(p))
-}
-
-func (s Agent_openByteStream_Results) ToPtr() capnp.Ptr {
-	return capnp.Struct(s).ToPtr()
-}
-func (s Agent_openByteStream_Results) IsValid() bool {
-	return capnp.Struct(s).IsValid()
-}
-
-func (s Agent_openByteStream_Results) Message() *capnp.Message {
-	return capnp.Struct(s).Message()
-}
-
-func (s Agent_openByteStream_Results) Segment() *capnp.Segment {
-	return capnp.Struct(s).Segment()
-}
-func (s Agent_openByteStream_Results) Stream() ByteStream {
+func (s Agent_debug_Results) Debug() Debug {
 	p, _ := capnp.Struct(s).Ptr(0)
-	return ByteStream(p.Interface().Client())
+	return Debug(p.Interface().Client())
 }
 
-func (s Agent_openByteStream_Results) HasStream() bool {
+func (s Agent_debug_Results) HasDebug() bool {
 	return capnp.Struct(s).HasPtr(0)
 }
 
-func (s Agent_openByteStream_Results) SetStream(v ByteStream) error {
+func (s Agent_debug_Results) SetDebug(v Debug) error {
 	if !v.IsValid() {
 		return capnp.Struct(s).SetPtr(0, capnp.Ptr{})
 	}
@@ -984,61 +1624,235 @@ func (s Agent_openByteStream_Results) SetStream(v ByteStream) error {
 	return capnp.Struct(s).SetPtr(0, in.ToPtr())
 }
 
-// Agent_openByteStream_Results_List is a list of Agent_openByteStream_Results.
-type Agent_openByteStream_Results_List = capnp.StructList[Agent_openByteStream_Results]
+// Agent_debug_Results_List is a list of Agent_debug_Results.
+type Agent_debug_Results_List = capnp.StructList[Agent_debug_Results]
 
-// NewAgent_openByteStream_Results creates a new list of Agent_openByteStream_Results.
-func NewAgent_openByteStream_Results_List(s *capnp.Segment, sz int32) (Agent_openByteStream_Results_List, error) {
+// NewAgent_debug_Results creates a new list of Agent_debug_Results.
+func NewAgent_debug_Results_List(s *capnp.Segment, sz int32) (Agent_debug_Results_List, error) {
 	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1}, sz)
-	return capnp.StructList[Agent_openByteStream_Results](l), err
+	return capnp.StructList[Agent_debug_Results](l), err
 }
 
-// Agent_openByteStream_Results_Future is a wrapper for a Agent_openByteStream_Results promised by a client call.
-type Agent_openByteStream_Results_Future struct{ *capnp.Future }
+// Agent_debug_Results_Future is a wrapper for a Agent_debug_Results promised by a client call.
+type Agent_debug_Results_Future struct{ *capnp.Future }
 
-func (f Agent_openByteStream_Results_Future) Struct() (Agent_openByteStream_Results, error) {
+func (f Agent_debug_Results_Future) Struct() (Agent_debug_Results, error) {
 	p, err := f.Future.Ptr()
-	return Agent_openByteStream_Results(p.Struct()), err
+	return Agent_debug_Results(p.Struct()), err
 }
-func (p Agent_openByteStream_Results_Future) Stream() ByteStream {
-	return ByteStream(p.Future.Field(0, nil).Client())
+func (p Agent_debug_Results_Future) Debug() Debug {
+	return Debug(p.Future.Field(0, nil).Client())
 }
 
-const schema_9a11c8b7284a61de = "x\xda\x8cSAh\x13]\x10\x9e\x99\xdd\xfc[\xf8\x1b" +
-	"\xc2s\x0b\x1aP\x036J\xad\x18M\xf5 \x85\x92\xd8" +
-	"\x83b/\xcdFrP\xf0\xf0\x8c\x8f\x184\x9b\xb0o" +
-	"\x83Z\x10\x0f=\xe4j\x10\x0f\xf6\xa47\x05\xb5\x17\xa9" +
-	"\xa8'\xf5\xd2\xeaI\x05\x0b*\xf5`APD(\xd6" +
-	"\xeb\xca\xdbu\xb3i\x8d\xd8\xdb.\xf3\xcd\xf7\xcd7\xdf" +
-	"\xbc\xfd\x071\xafg\xe3\x8b:\x90u(\xf6\x9f\xc7\xca" +
-	"\xef\x9a\x8f\x1f|n\x01\xdb\xa4yK|b\xe8\xe1<" +
-	"\x9b\x01@\xd3\xa2g\xe6\x092\x00\xcc\x12\xb5\xcc;\xea" +
-	"\xcb[\xba\xf6bR\xfc\x90W\x81mC\x00\xdd\x008" +
-	"\xd0\xa6\"\x82\xee\xcd\xaeV\xe7\xbe\xdf,\xdd\x05\xb6%" +
-	"\xac\\&GU\x06\xbf~\\x\xfb~l\xbe\xab\xa7" +
-	"J'U\xa5\xcdWwo\x1f\x98|\xdd\xd5S\xa2\x1d" +
-	"\xaa\xf2|\xe6b\xfb\xc6\x91\xc17AO\x0cUiL" +
-	"\x09\xa1y\x8cr\x80\xde\xf2\xd1G{\x9e\xcc\x0e}Z" +
-	"C:\xa1Z\xeb\xf9\xca\xe6\xad\xcb\xd3\xdf\xfe\xf0S\xa2" +
-	"/&\xf7\xfd\x9c\xa2\x96y\xcf\xf7\xb3r[\xcc\xbd\xdc" +
-	"\xb5\xb8\x12L\x10\xe8\\\xa7)\xa5s\xcb\xd7\x99\xbe\xff" +
-	"\xff\xab\x0f\xc9\xd3?\xbb\x01OiX\x01\x16(\x07{" +
-	"\xbd2o\xd8\x8d}\xbcB\xc2v3\xfe\xcf\xe8\xe1\x8a" +
-	"\xb0]( Z}Z\x0c\xa0c\x13C2\x96\x1d\x06" +
-	"b;\x0d\xc4\xce\xda0\x9c\x84%\xa7\x80\x183\x12\x8d" +
-	"\xaa]\xc9\xa3Wo\x08{\xfc\x92+ w\xdcu\x04" +
-	"\xaf\xe5\xb1\x80\xd8Q\xd5#U\x05\x0a \x993u[" +
-	"\xa4\x8bB6\xcf\xbb({a\xfd\x093!u\xd0\x95" +
-	".\xa4\xb8\xc3k\xf2\x1f\xdc\x17\x9c\xaa\xfb\x9b\\s#" +
-	"\xb0\xb6\x9e\\\x8d\x9f.p\xc7\xd8(eA\xa9\xa3\xb4" +
-	"tM\x07\xd0\x11\x80\xc5G\x00\xac>\x0d\xad\x01\xc2T" +
-	"\xf9l\xd3>\x87q \x8c\xc3\x86\xfc\xfb|\x12\xa0W" +
-	"B\x016\xa1\xc0QL\xe1\xcdax\xb0,;\x12\xc6" +
-	"\x14\x9e\x1b\x86\x0f\x80%U\x84q#\xe5\x0f\x9f\xc7\x84" +
-	"\xd2\xfck6=\xf7]\xcc\xf9\x09\xadq<\x1a9\xce" +
-	"I\x1f\x86,\xbah@d]\xe6{\xef\xbc(db" +
-	"=\xedxD{\xa5&\xa4\xe4\x15\x81\xfd@\xd8\x0f\xf8" +
-	"+\x00\x00\xff\xff\x84m@\x0f"
+type Agent_network_Params capnp.Struct
+
+// Agent_network_Params_TypeID is the unique identifier for the type Agent_network_Params.
+const Agent_network_Params_TypeID = 0xac55a0efb669f5af
+
+func NewAgent_network_Params(s *capnp.Segment) (Agent_network_Params, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Agent_network_Params(st), err
+}
+
+func NewRootAgent_network_Params(s *capnp.Segment) (Agent_network_Params, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Agent_network_Params(st), err
+}
+
+func ReadRootAgent_network_Params(msg *capnp.Message) (Agent_network_Params, error) {
+	root, err := msg.Root()
+	return Agent_network_Params(root.Struct()), err
+}
+
+func (s Agent_network_Params) String() string {
+	str, _ := text.Marshal(0xac55a0efb669f5af, capnp.Struct(s))
+	return str
+}
+
+func (s Agent_network_Params) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Agent_network_Params) DecodeFromPtr(p capnp.Ptr) Agent_network_Params {
+	return Agent_network_Params(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Agent_network_Params) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Agent_network_Params) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Agent_network_Params) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Agent_network_Params) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+
+// Agent_network_Params_List is a list of Agent_network_Params.
+type Agent_network_Params_List = capnp.StructList[Agent_network_Params]
+
+// NewAgent_network_Params creates a new list of Agent_network_Params.
+func NewAgent_network_Params_List(s *capnp.Segment, sz int32) (Agent_network_Params_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0}, sz)
+	return capnp.StructList[Agent_network_Params](l), err
+}
+
+// Agent_network_Params_Future is a wrapper for a Agent_network_Params promised by a client call.
+type Agent_network_Params_Future struct{ *capnp.Future }
+
+func (f Agent_network_Params_Future) Struct() (Agent_network_Params, error) {
+	p, err := f.Future.Ptr()
+	return Agent_network_Params(p.Struct()), err
+}
+
+type Agent_network_Results capnp.Struct
+
+// Agent_network_Results_TypeID is the unique identifier for the type Agent_network_Results.
+const Agent_network_Results_TypeID = 0xf2d726cbb665a8f2
+
+func NewAgent_network_Results(s *capnp.Segment) (Agent_network_Results, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return Agent_network_Results(st), err
+}
+
+func NewRootAgent_network_Results(s *capnp.Segment) (Agent_network_Results, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return Agent_network_Results(st), err
+}
+
+func ReadRootAgent_network_Results(msg *capnp.Message) (Agent_network_Results, error) {
+	root, err := msg.Root()
+	return Agent_network_Results(root.Struct()), err
+}
+
+func (s Agent_network_Results) String() string {
+	str, _ := text.Marshal(0xf2d726cbb665a8f2, capnp.Struct(s))
+	return str
+}
+
+func (s Agent_network_Results) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Agent_network_Results) DecodeFromPtr(p capnp.Ptr) Agent_network_Results {
+	return Agent_network_Results(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Agent_network_Results) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Agent_network_Results) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Agent_network_Results) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Agent_network_Results) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+func (s Agent_network_Results) Network() Network {
+	p, _ := capnp.Struct(s).Ptr(0)
+	return Network(p.Interface().Client())
+}
+
+func (s Agent_network_Results) HasNetwork() bool {
+	return capnp.Struct(s).HasPtr(0)
+}
+
+func (s Agent_network_Results) SetNetwork(v Network) error {
+	if !v.IsValid() {
+		return capnp.Struct(s).SetPtr(0, capnp.Ptr{})
+	}
+	seg := s.Segment()
+	in := capnp.NewInterface(seg, seg.Message().CapTable().Add(capnp.Client(v)))
+	return capnp.Struct(s).SetPtr(0, in.ToPtr())
+}
+
+// Agent_network_Results_List is a list of Agent_network_Results.
+type Agent_network_Results_List = capnp.StructList[Agent_network_Results]
+
+// NewAgent_network_Results creates a new list of Agent_network_Results.
+func NewAgent_network_Results_List(s *capnp.Segment, sz int32) (Agent_network_Results_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1}, sz)
+	return capnp.StructList[Agent_network_Results](l), err
+}
+
+// Agent_network_Results_Future is a wrapper for a Agent_network_Results promised by a client call.
+type Agent_network_Results_Future struct{ *capnp.Future }
+
+func (f Agent_network_Results_Future) Struct() (Agent_network_Results, error) {
+	p, err := f.Future.Ptr()
+	return Agent_network_Results(p.Struct()), err
+}
+func (p Agent_network_Results_Future) Network() Network {
+	return Network(p.Future.Field(0, nil).Client())
+}
+
+const schema_9a11c8b7284a61de = "x\xda\x8cU_h\x1cE\x18\xff\xbe\xdd\x99^\xc0;" +
+	"\x8eq#5\xb1\x1a\xd4ki#\x9eM\x8a\x0f\x09\x94" +
+	";c\xb4M\xb1\xcd\xedi\x1f\xfaPdz\x99\xacG" +
+	"z{\xe9\xee\x1ei\xfa\x120H\xd4\x17\x0d>5E" +
+	"Z\xc4\x80-j\x10\xb4\xd2H\xa1\x8d/\xa2\xf8`K" +
+	"\xb1\xa8\x14\xc4\xa2(\x15\xa1ZE\x1f\xdc2\xb3\x9d\xec" +
+	"^\x92\xa3y\xdb\xd9\xef\xfb}\xbf\xdf\xf7g\xbe\xd9>" +
+	"h\x14IO\xe6d\x1b\x18\xf6\x08\xdd\x10\xb2\xcaw\x8d" +
+	"\xc5\x8f\x7f\x99\x01v\xaf\x19^\xe3{\xb6~\xfa\x05\x9b" +
+	"\x03@\xebI\xb2d\xed$)\x00\xab\x8f\xccX\xaf\xc9" +
+	"\xaf\xf0\xda[_\x0e\x8b\xbf\xfc7\x81=\x88\x00\xf2\xd7" +
+	"\x8e#\xa4\x8c@\xc2\x97\xa7\x7f\xcc\xfc\xd7\xf7\xff\x89U" +
+	"a\x0e\x92%K\xa80\x9c\xccX\x9f\xa807\xff\xfc" +
+	"yC\xe7\xa9_O\xaer~\x9b\\\xb2N+\xe7y" +
+	"\xb2\xcb\xba\xa2\x9cO\xfcs#=\x9c\xc3y`\xf7k" +
+	"\xce\xf3\xc4\x93\x9c\x0fl\x1a\xde|a\xff\x8d3\xc0:" +
+	"\x11\x80\x9a\xd2t\x9a\xbc\x83\x80\xd69\xb2\x00\x18.\xdc" +
+	"\xaa\x9e\xfd\xe3\xd4\xfe\xf7\x13P\x9b\xf6K\xe8\xab\xb3K" +
+	"\x8b\x97\xa7\x1f_LX\xfa\xe8#\xd2rt\xfb+\x9d" +
+	"\xbb\x9f\xbeo)\xb2P\x94\xa6\x87i\xb7\x0c\xba\x8d\x16" +
+	"\x00\xc3Y~k\xdbC\xed\xc3\x97\x12\xd0!i'\xe1" +
+	"\xe7sGg\x8f?\xfb\xe8\xe5\xa8:\x11\xb4\x87\x96%" +
+	"t\xa7\x82~\xff\xae\xff\xfa\xc6t\xef\xd5H\xb0\x82\x1e" +
+	"\xa4g$\xf4\xdf\xec\xc5-\x17\xdf(_M\xb2\xee\xa5" +
+	"\xc7$\xf4\x80\x82^\xdfu\xee\xb1\xcf\x16\xb6\xfe\x94\xa8" +
+	"\xfc$\xdd#\xa1\xf5\xa2\xb3q\xd3\xf5\xe9\xdfW\x15S" +
+	"\xd0\xdf\xac#T\x16\xb3Fg\xac\xf3TU\xfe=q" +
+	"\xf6\xab-\xdf\xdeL\xf2\xcc\xd3\x01\xc9\xf3\x81\xe2\x99\xfe" +
+	"\xf0\x9eo~\xe88\xf4w\xd2\xe1k\xda+\x1d\xae\xd0" +
+	"\x02\x1c\x08+|\xdc\x1d\x7f\x82;\x86p\x83\xbc:\xf4" +
+	"?\xe5\x087\x80\x12\xa2\xddfR\x80\xe5\x0a\xa1\x0e\xc6" +
+	"zz\xc1`\x9bS\x18\xb7\x04\xb5\x12\xd61\x00\x06\xcb" +
+	"\xa4\xbaF\xc4\xa1\x86S\xc4)W\x04\x13uo\xac\x88" +
+	"%\xc4e6\x12\xb3\x0dL\x06\xe2\xf9\xc0\x13\xbc\x96\x1f" +
+	"\xa9\xbb\"W\x16~\xe3p\x80\xfeZ\xca\x06e\xcc\x84" +
+	"2\xddv\xd4]f=\xddZ\x99\x9e3\xd4\xbd`\x1d" +
+	"\xc7\xc0`,\x95\x1d\xaf\xbaN\x11\xc3\xfa\xb8p%9" +
+	"\x14\"\xfaf\x85\x09\xd6}*\x03\x1c\x93\xbcD\xf1\xea" +
+	"IE=\x01\x8c\xcd\xa9\xac\xc3J\xdd\x1d\xad:\x0d\x0f" +
+	"\xc5\x90\x1b\x08o\x94\x9b\x15\xd12u\x95N^\xeb\x88" +
+	"T\xe4J]\xdc\xe3\xb58}\xbaR\xc8X^\x93h" +
+	"\x8e\x8a\xc8\x95\xb8\x97\xe25\xdfN\x9b\x04\x80 \x00{" +
+	"\xa6\x1f\xc0.\x9ah?g ClG\xf9s\xa8\x1b" +
+	"\xc0\x1e4\xd1.\x19\xc8\x0c\xa3\x1d\x0d\x00\xb6w\x00\xc0" +
+	"\xdem\xa2\xfd\x82\x81\x85\xea\xe8>^\x13\x98\x06\x03\xd3" +
+	"\x80\xd9Ju\xc4\xd3\x87)\x87\x07b\x82O\xea\xf3\xb2" +
+	"Ds\xc5\xec\xe4\xef\xf4<W(5\xe7b\xae\xcc]" +
+	"\xb6Bk\xbf\x8bWY\xf8\xd9\xc6\xe1\xc0\xb7\xc9r\x8a" +
+	"\x19)\xbc\xcdD\xbb\xdd\xc0\xa9\x9a\xf0}\xee\x88\xbb\x8b" +
+	"S\x83\x99+\xf1l\x93\xb4\xb5'r\xc2\xab\x06\xaa\xb8" +
+	"\xbc\x86M\xcc\xbd1sW\xe5\xa5\x86;\x86\x1900" +
+	"\x93\xe0]_\xdftV\xeb\x1e\x8frA\xdd\x8f&1" +
+	"\xfd\xb1\x98\x82\xaf\xdc\x90\xc5{\x04\x10\x19\xac\xeb\xeaE" +
+	"\xdd\x02X\xeb\x12D\xbeY\xe9\x1c\xdf?\xbd!\xd1\xfd" +
+	"\xe8\xc2\xc4\x8e\xb9\x17\x8f'6\x83\xdep\xa8\x1f\x19\xd6" +
+	"\xd1\x1dm\x06U\xd4\"f%g\xcb\xbb\xd1<H\xd1" +
+	"R\xf0\xa1U\xf3\xef\xf8!\x8b\xdf\xa2\x15i\xb7\x18\x83" +
+	"\xb2\xe8ZU\xcedo\x95\x17\xb2\xf8=\x8c\xc2\xde\x0e" +
+	"\x00\x00\xff\xff\x12\x8c5T"
 
 func RegisterSchema(reg *schemas.Registry) {
 	reg.Register(&schemas.Schema{
@@ -1046,10 +1860,17 @@ func RegisterSchema(reg *schemas.Registry) {
 		Nodes: []uint64{
 			0x87e7b4ba75da6311,
 			0x9073f4654fca93de,
+			0x9bfe39fa0de18382,
+			0x9fe9a01a06e6f3f2,
+			0xa501244f0cecf79b,
+			0xaaec55c0254f1c1b,
 			0xac55a0efb669f5af,
-			0xc83ddbd6c9dfeb23,
+			0xba2d83d3bac29188,
+			0xc21543481a853078,
 			0xd24f141e29f56191,
 			0xd323469991789ac3,
+			0xd8320c178a73a4db,
+			0xd8528fc126c10ff9,
 			0xe328afbb2bb947e4,
 			0xed83e41c1767406f,
 			0xf2d726cbb665a8f2,
