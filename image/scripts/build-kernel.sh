@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -21,6 +21,8 @@ ALPINE_ARCH="$(to_alpine_arch)"
 ALPINE_VERSION="$(cat "$BUILD_DIR/alpine.version" 2>/dev/null || echo "3.20.3")"
 ALPINE_BRANCH="v$(echo "$ALPINE_VERSION" | cut -d. -f1,2)"
 KERNEL_MODE="${KERNEL_MODE:-auto}" # auto|package|source
+KERNEL_BACKUP_CREATED=0
+KERNEL_BUILD_OK=0
 
 if [[ ! -d "$ROOTFS_DIR" ]]; then
   echo "missing rootfs at $ROOTFS_DIR. run build-rootfs.sh first" >&2
@@ -84,7 +86,10 @@ run_source_fallback() {
   "$SCRIPT_DIR/build-kernel-source.sh"
 }
 
-rm -f "$BUILD_DIR/kernel"
+if [[ -f "$BUILD_DIR/kernel" ]]; then
+  cp -f "$BUILD_DIR/kernel" "$KERNEL_BACKUP"
+  KERNEL_BACKUP_CREATED=1
+fi
 
 case "$KERNEL_MODE" in
   package)
@@ -116,6 +121,7 @@ if ! kernel_is_valid; then
 fi
 
 ln -sf "$(basename "$BUILD_DIR/kernel")" "$BUILD_DIR/vmlinuz"
+KERNEL_BUILD_OK=1
 
 echo "kernel ready at $BUILD_DIR/kernel (symlinked as $BUILD_DIR/vmlinuz)"
 echo "modules and fs/network tooling staged into $ROOTFS_DIR"

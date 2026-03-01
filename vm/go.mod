@@ -1,4 +1,4 @@
-module github.com/gabrielvillalongasimon/vmrunner/agent
+module vmrunner/vm
 
 go 1.26
 

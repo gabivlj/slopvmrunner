@@ -1,35 +1,52 @@
 SHELL := /bin/bash
 
-VERBOSE ?= 0
+VERBOSE ?= 1
 KERNEL_MODE ?= source
 BOOT_MODE ?= linux
-AGENT_PORT ?= 8080
+AGENT_VSOCK_PORT ?= 7000
 MEMORY_MIB ?= 512
 CPUS ?= 2
 
 ROOT_IMAGE ?= build/rootfs.raw
 KERNEL ?= build/kernel
 AGENT_GO_SOURCES := $(shell find agent -type f -name '*.go')
+VM_GO_SOURCES := $(shell find vm -type f -name '*.go')
+API_CAPNP_SOURCES := $(shell find api/capnp -type f -name '*.capnp')
+API_GO_GENERATED := $(shell find api/gen/go -type f -name '*.go' 2>/dev/null)
+GO_CACHE_DIR := $(abspath build/.gocache)
+GO_PATH_DIR := $(abspath build/.gopath)
+GO_BUILD_ENV := GOCACHE=$(GO_CACHE_DIR) GOPATH=$(GO_PATH_DIR)
 
-.PHONY: help agent rootfs kernel raw image run run-efi clean clean-kernel check-kernel require-kernel
+.PHONY: help api agent rootfs kernel raw image vm-binaries test run run-go run-efi clean clean-kernel check-kernel require-kernel
 
 help:
 	@echo "Targets:"
 	@echo "  make image              Build agent + rootfs + kernel + raw image"
+	@echo "  make api                Generate Go bindings from api/capnp/*.capnp"
+	@echo "  make vm-binaries        Build vm + vmmanager binaries into build/"
 	@echo "  make kernel             Build/refresh kernel artifact"
 	@echo "  make rootfs             Build/refresh rootfs tree"
 	@echo "  make raw                Build/refresh rootfs.raw"
 	@echo "  make run                Run VM in linux boot mode"
+	@echo "  make run-go             Run VM via Go wrapper (spawns Swift manager)"
 	@echo "  make run-efi            Run VM in efi boot mode"
+	@echo "  make test               Run e2e cold-boot benchmark test"
 	@echo "  make check-kernel       Validate kernel artifact format"
 	@echo ""
 	@echo "Variables:"
 	@echo "  VERBOSE=1               Verbose script output"
 	@echo "  KERNEL_MODE=source      Force source kernel build"
-	@echo "  AGENT_PORT=8080         Agent port"
+	@echo "  AGENT_VSOCK_PORT=7000   Agent vsock port"
 	@echo "  MEMORY_MIB=512 CPUS=2   VM resources"
 
-build/.agent.stamp: image/scripts/build-agent.sh image/scripts/lib/arch.sh agent/go.mod $(AGENT_GO_SOURCES)
+build/.api-go.stamp: api/scripts/gen-go.sh api/go.mod api/go.sum $(API_CAPNP_SOURCES)
+	@mkdir -p build
+	cd api && $(GO_BUILD_ENV) ./scripts/gen-go.sh
+	@touch $@
+
+api: build/.api-go.stamp
+
+build/.agent.stamp: image/scripts/build-agent.sh image/scripts/lib/arch.sh agent/go.mod $(AGENT_GO_SOURCES) build/.api-go.stamp $(API_GO_GENERATED)
 	@mkdir -p build
 	VERBOSE=$(VERBOSE) ./image/scripts/build-agent.sh
 	@touch $@
@@ -58,6 +75,19 @@ raw: build/rootfs.raw
 
 image: build/kernel build/rootfs.raw
 
+build/vmmanager: manager/run-local.sh manager/Package.swift manager/Sources/vmmanager/main.swift manager/vmmanager.entitlements
+	@mkdir -p build
+	./manager/run-local.sh --out "$(abspath build/vmmanager)" --build-only
+
+build/vm: vm/go.mod $(VM_GO_SOURCES) build/.api-go.stamp $(API_GO_GENERATED) build/vmmanager
+	@mkdir -p build
+	cd vm && $(GO_BUILD_ENV) go build -o ../build/vm ./cmd/vm
+
+vm-binaries: build/vmmanager build/vm
+
+test: image vm-binaries
+	cd vm && $(GO_BUILD_ENV) go test -count=1 -v ./...
+
 check-kernel: build/kernel
 	@if [[ "$$(uname -m)" == "arm64" ]]; then \
 		file build/kernel | grep -q "Linux kernel ARM64 boot executable Image" || \
@@ -75,21 +105,31 @@ require-kernel:
 		( echo "invalid kernel format for arm64:" && file "$(KERNEL)" && echo "run: make kernel KERNEL_MODE=source" && exit 1 ); \
 	fi
 
-run: build/rootfs.raw require-kernel
-	cd manager && ./run-local.sh \
+run: build/rootfs.raw require-kernel build/vmmanager
+	./build/vmmanager \
 		--boot-mode $(BOOT_MODE) \
-		--kernel ../$(KERNEL) \
-		--root-image ../$(ROOT_IMAGE) \
-		--agent-port $(AGENT_PORT) \
+		--kernel $(KERNEL) \
+		--root-image $(ROOT_IMAGE) \
+		--agent-vsock-port $(AGENT_VSOCK_PORT) \
 		--memory-mib $(MEMORY_MIB) \
 		--cpus $(CPUS) \
 		--verbose
 
-# TODO: Untested and unsupported.
-run-efi: build/rootfs.raw
-	cd manager && ./run-local.sh \
+run-go: build/rootfs.raw require-kernel build/vm
+	./build/vm \
+		--boot-mode $(BOOT_MODE) \
+		--kernel $(KERNEL) \
+		--root-image $(ROOT_IMAGE) \
+		--agent-vsock-port $(AGENT_VSOCK_PORT) \
+		--agent-ready-socket build/agent-ready.sock \
+		--memory-mib $(MEMORY_MIB) \
+		--cpus $(CPUS) \
+		--verbose=true
+
+run-efi: build/rootfs.raw build/vmmanager
+	./build/vmmanager \
 		--boot-mode efi \
-		--root-image ../$(ROOT_IMAGE) \
+		--root-image $(ROOT_IMAGE) \
 		--memory-mib $(MEMORY_MIB) \
 		--cpus $(CPUS) \
 		--verbose

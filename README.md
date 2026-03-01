@@ -7,13 +7,14 @@ Fast-boot Linux microVM experiments on macOS ("firecracker for Macs") using Appl
 - `manager/`: macOS VM manager (Swift + `Virtualization` framework)
 - `agent/`: Linux guest agent (Go), currently intended to run as `pid 1`
 - `image/`: scripts to build a minimal raw root disk image
+- `api/`: Cap'n Proto schemas + generated Go bindings
 
 ## Current Status
 
 This repo is now bootstrapped with:
 
 - a manager CLI that builds a `VZVirtualMachineConfiguration`
-- a guest agent that listens on TCP and returns `hello world`
+- a guest agent that connects to host over vsock as soon as guest userspace is up
 - image scripts that assemble a raw ext4 root image and set `/sbin/init -> /sbin/agent`
 - a reproducible kernel pipeline (`linux-virt`) with modules/tools copied into the rootfs
 
@@ -73,7 +74,7 @@ Remaining:
 
 1. Stabilize serial console interaction from manager to guest.
 2. Expose guest connectivity (NAT + reachable service path).
-3. Add minimal request protocol beyond `hello world`.
+3. Add minimal request protocol (implemented: `Agent.ping` over Cap'n Proto RPC).
 
 ### 4. Container runtime path (later)
 
@@ -83,13 +84,38 @@ Remaining:
 
 ## Manager Usage (current)
 
-From `manager/`, run with local signing + entitlements:
+Build VM-related binaries into `build/`:
 
 ```bash
-make run AGENT_PORT=8080
+make vm-binaries
 ```
 
-Why this wrapper: macOS requires the `com.apple.security.virtualization` entitlement to create VMs via `Virtualization.framework`. `run-local.sh` signs `.build/debug/vmmanager` with `manager/vmmanager.entitlements` before execution.
+Generate Cap'n Proto Go bindings:
+
+```bash
+make api
+```
+
+This produces:
+
+- `build/vmmanager` (Swift manager, signed with virtualization entitlement)
+- `build/vm` (Go launcher)
+
+Run Swift manager directly:
+
+```bash
+make run AGENT_VSOCK_PORT=7000
+```
+
+Go wrapper path (SDK-style config + spawn):
+
+```bash
+make run-go AGENT_VSOCK_PORT=7000
+```
+
+This executes `vm/cmd/vm`, which builds a VM config in Go (`vm/vm.go`) and launches the built Swift manager binary (`build/vmmanager`).
+
+Why this wrapper: macOS requires the `com.apple.security.virtualization` entitlement to create VMs via `Virtualization.framework`. `manager/run-local.sh` now builds/signs `build/vmmanager` with `manager/vmmanager.entitlements` as part of the normal build flow.
 
 On Apple Silicon, `VZLinuxBootLoader` needs an uncompressed ARM64 Linux `Image` artifact. The manager now performs a preflight check and fails early if you pass an EFI/PE `vmlinuz` by mistake.
 
@@ -111,9 +137,10 @@ KERNEL_MODE=source make kernel
 
 `agent/cmd/agent/main.go`:
 
-- listens on TCP `:8080` by default
-- replies `hello world` to each connection
-- includes basic signal handling and zombie reaping logic for `pid 1`
+- runs as `pid 1` and performs signal handling + zombie reaping
+- reads `agent.vsock_port=<port>` from kernel cmdline (default `7000`)
+- repeatedly attempts guest->host vsock connect to host CID `2`
+- serves Cap'n Proto RPC over that vsock connection (`Agent.ping -> "pong"`)
 
 ## Practical constraints on macOS
 

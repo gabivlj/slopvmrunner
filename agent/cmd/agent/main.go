@@ -1,15 +1,21 @@
 package main
 
 import (
-	"fmt"
+	"context"
+	"io"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
+	"time"
+
+	capnp "capnproto.org/go/capnp/v3"
+	"capnproto.org/go/capnp/v3/rpc"
+	vmapi "github.com/gabrielvillalongasimon/vmrunner/api/gen/go/capnp"
 )
 
 func main() {
@@ -18,45 +24,111 @@ func main() {
 	}
 	go handleSignals()
 
-	port := parsePort()
-	addr := fmt.Sprintf(":%d", port)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		log.Fatalf("listen %s: %v", addr, err)
-	}
-	log.Printf("agent[%d] listening on %s", os.Getpid(), addr)
+	cid, port := parseVsockTarget()
+	log.Printf("agent[%d] connecting to host via vsock cid=%d port=%d", os.Getpid(), cid, port)
 
 	for {
-		conn, err := ln.Accept()
+		file, err := dialVsock(cid, port)
 		if err != nil {
-			log.Printf("accept: %v", err)
+			log.Printf("vsock connect cid=%d port=%d failed: %v", cid, port, err)
+			time.Sleep(200 * time.Millisecond)
 			continue
 		}
-		go func(c net.Conn) {
-			defer c.Close()
-			_, _ = c.Write([]byte("hello world\n"))
-		}(conn)
+		log.Printf("vsock connected to host cid=%d port=%d", cid, port)
+
+		if err := serveRPC(file); err != nil {
+			log.Printf("rpc connection terminated: %v", err)
+			time.Sleep(200 * time.Millisecond)
+		} else {
+			log.Printf("rpc connection closed; retrying")
+		}
 	}
 }
 
-func parsePort() int {
-	port := 8080
+type agentServer struct{}
+type byteStreamServer struct {
+	bytes atomic.Uint64
+}
 
-	if env := os.Getenv("AGENT_PORT"); env != "" {
+func (agentServer) Ping(_ context.Context, call vmapi.Agent_ping) error {
+	res, err := call.AllocResults()
+	if err != nil {
+		return err
+	}
+	return res.SetMessage_("pong")
+}
+
+func (agentServer) OpenByteStream(_ context.Context, call vmapi.Agent_openByteStream) error {
+	res, err := call.AllocResults()
+	if err != nil {
+		return err
+	}
+
+	stream := vmapi.ByteStream_ServerToClient(&byteStreamServer{})
+	defer stream.Release()
+	return res.SetStream(stream)
+}
+
+func (s *byteStreamServer) Write(_ context.Context, call vmapi.ByteStream_write) error {
+	chunk, err := call.Args().Chunk()
+	if err != nil {
+		return err
+	}
+	s.bytes.Add(uint64(len(chunk)))
+	return nil
+}
+
+func (s *byteStreamServer) Done(_ context.Context, _ vmapi.ByteStream_done) error {
+	log.Printf("byte stream done: bytes=%d", s.bytes.Load())
+	return nil
+}
+
+func serveRPC(rwc io.ReadWriteCloser) error {
+	defer rwc.Close()
+
+	bootstrap := vmapi.Agent_ServerToClient(agentServer{})
+	defer bootstrap.Release()
+
+	rpcConn := rpc.NewConn(rpc.NewStreamTransport(rwc), &rpc.Options{
+		BootstrapClient: capnp.Client(bootstrap),
+	})
+	defer rpcConn.Close()
+
+	<-rpcConn.Done()
+	return rpcConn.Close()
+}
+
+func parseVsockTarget() (uint32, uint32) {
+	cid := uint32(2)
+	port := uint32(7000)
+
+	if env := os.Getenv("AGENT_VSOCK_CID"); env != "" {
 		if p, err := strconv.Atoi(env); err == nil {
-			port = p
+			cid = uint32(p)
+		}
+	}
+	if env := os.Getenv("AGENT_VSOCK_PORT"); env != "" {
+		if p, err := strconv.Atoi(env); err == nil {
+			port = uint32(p)
 		}
 	}
 
 	for _, arg := range readKernelCmdline() {
-		if strings.HasPrefix(arg, "agent.port=") {
-			if p, err := strconv.Atoi(strings.TrimPrefix(arg, "agent.port=")); err == nil {
-				port = p
+		if strings.HasPrefix(arg, "agent.vsock_cid=") {
+			if p, err := strconv.Atoi(strings.TrimPrefix(arg, "agent.vsock_cid=")); err == nil {
+				cid = uint32(p)
+			}
+			continue
+		}
+
+		if strings.HasPrefix(arg, "agent.vsock_port=") {
+			if p, err := strconv.Atoi(strings.TrimPrefix(arg, "agent.vsock_port=")); err == nil {
+				port = uint32(p)
 			}
 		}
 	}
 
-	return port
+	return cid, port
 }
 
 func readKernelCmdline() []string {

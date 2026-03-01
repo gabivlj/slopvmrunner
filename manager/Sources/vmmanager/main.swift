@@ -14,7 +14,8 @@ struct ManagerConfig {
     let rootImagePath: String
     let memoryMiB: UInt64
     let cpuCount: Int
-    let agentPort: Int
+    let agentVsockPort: Int
+    let agentReadySocketPath: String?
     let verbose: Bool
 
     var bootArgs: String {
@@ -24,19 +25,23 @@ struct ManagerConfig {
             "printk.time=1",
             "root=/dev/vda rw",
             "init=/sbin/agent",
-            "agent.port=\(agentPort)"
+            "agent.vsock_port=\(agentVsockPort)"
         ].joined(separator: " ")
     }
 }
 
 final class VMRuntime {
     let vm: VZVirtualMachine
+    let config: ManagerConfig
     let verbose: Bool
     private var stateLogTimer: DispatchSourceTimer?
     private var lastState: String?
+    private var vsockListener: VZVirtioSocketListener?
+    private var vsockDelegate: AgentVsockListenerDelegate?
 
-    init(vm: VZVirtualMachine, verbose: Bool) {
+    init(vm: VZVirtualMachine, config: ManagerConfig, verbose: Bool) {
         self.vm = vm
+        self.config = config
         self.verbose = verbose
     }
 
@@ -54,6 +59,150 @@ final class VMRuntime {
         }
         timer.resume()
         self.stateLogTimer = timer
+    }
+
+    func enableVsockAgentListener() {
+        guard let socketDevice = vm.socketDevices.compactMap({ $0 as? VZVirtioSocketDevice }).first else {
+            fputs("warning: no VZVirtioSocketDevice found; vsock listener disabled\n", stderr)
+            return
+        }
+
+        let listener = VZVirtioSocketListener()
+        let delegate = AgentVsockListenerDelegate(
+            readySocketPath: config.agentReadySocketPath,
+            verbose: verbose
+        )
+        listener.delegate = delegate
+        socketDevice.setSocketListener(listener, forPort: UInt32(config.agentVsockPort))
+        vsockListener = listener
+        vsockDelegate = delegate
+
+        if verbose {
+            fputs("[vmmanager] vsock listening on host port \(config.agentVsockPort)\n", stderr)
+            if let readyPath = config.agentReadySocketPath {
+                fputs("[vmmanager] unix readiness notify path=\(readyPath)\n", stderr)
+            }
+        }
+    }
+}
+
+final class AgentVsockListenerDelegate: NSObject, VZVirtioSocketListenerDelegate {
+    private let readySocketPath: String?
+    private let verbose: Bool
+    private var readyNotified = false
+    private var connections: [VZVirtioSocketConnection] = []
+    private let lock = NSLock()
+
+    init(readySocketPath: String?, verbose: Bool) {
+        self.readySocketPath = readySocketPath
+        self.verbose = verbose
+    }
+
+    func listener(
+        _ listener: VZVirtioSocketListener,
+        shouldAcceptNewConnection connection: VZVirtioSocketConnection,
+        from socketDevice: VZVirtioSocketDevice
+    ) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        connections.append(connection)
+
+        if verbose {
+            fputs(
+                "[vmmanager] accepted vsock connection src=\(connection.sourcePort) dst=\(connection.destinationPort)\n",
+                stderr
+            )
+        }
+
+        if !readyNotified {
+            readyNotified = true
+            sendConnectionFDOverUnixSocket(connection.fileDescriptor)
+        }
+
+        if verbose {
+            fputs(
+                "[vmmanager] notified parent process\n",
+                stderr
+            )
+        }
+
+        return true
+    }
+
+    private func sendConnectionFDOverUnixSocket(_ fdToSend: Int32) {
+        guard let path = readySocketPath else { return }
+        if path.utf8.count >= 104 {
+            fputs("warning: unix socket path too long: \(path)\n", stderr)
+            return
+        }
+
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else {
+            fputs("warning: failed to create unix socket for readiness notify\n", stderr)
+            return
+        }
+        defer { close(fd) }
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let maxPathLen = MemoryLayout.size(ofValue: addr.sun_path)
+        path.withCString { src in
+            _ = withUnsafeMutablePointer(to: &addr.sun_path) {
+                $0.withMemoryRebound(to: CChar.self, capacity: maxPathLen) { dst in
+                    strncpy(dst, src, maxPathLen - 1)
+                }
+            }
+        }
+
+        let pathLen = path.utf8.count
+        let len = socklen_t(MemoryLayout<sa_family_t>.size + pathLen + 1)
+        let result = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                Darwin.connect(fd, sockPtr, len)
+            }
+        }
+        if result != 0 {
+            fputs("warning: failed to connect readiness socket at \(path): \(String(cString: strerror(errno)))\n", stderr)
+            return
+        }
+
+        struct FDControlMessage {
+            var header: cmsghdr
+            var fd: Int32
+
+            init(fd: Int32) {
+                self.header = cmsghdr(
+                    cmsg_len: socklen_t(MemoryLayout<cmsghdr>.size + MemoryLayout<Int32>.size),
+                    cmsg_level: SOL_SOCKET,
+                    cmsg_type: SCM_RIGHTS
+                )
+                self.fd = fd
+            }
+        }
+
+        var payload: UInt8 = 0x1
+        var control = FDControlMessage(fd: fdToSend)
+        let sendResult: Int = withUnsafeMutablePointer(to: &payload) { payloadPtr in
+            var iov = iovec(iov_base: UnsafeMutableRawPointer(payloadPtr), iov_len: 1)
+            return withUnsafeMutablePointer(to: &control) { controlPtr in
+                var msg = msghdr()
+                msg.msg_iov = withUnsafeMutablePointer(to: &iov) { $0 }
+                msg.msg_iovlen = 1
+                msg.msg_control = UnsafeMutableRawPointer(controlPtr)
+                msg.msg_controllen = socklen_t(MemoryLayout<FDControlMessage>.size)
+                return Darwin.sendmsg(fd, &msg, 0)
+            }
+        }
+
+        if sendResult < 0 {
+            fputs("warning: sendmsg(SCM_RIGHTS) failed: \(String(cString: strerror(errno)))\n", stderr)
+            return
+        }
+
+        if verbose {
+            fputs("[vmmanager] delivered vsock fd \(fdToSend) over unix socket\n", stderr)
+        }
     }
 }
 
@@ -79,7 +228,8 @@ struct VMManagerCLI {
         var rootImagePath: String?
         var memoryMiB: UInt64 = 512
         var cpuCount = 2
-        var agentPort = 8080
+        var agentVsockPort = 7000
+        var agentReadySocketPath: String?
         var verbose = false
 
         var i = 1
@@ -103,8 +253,10 @@ struct VMManagerCLI {
                 i += 1; memoryMiB = UInt64(value(at: i, for: arg)) ?? memoryMiB
             case "--cpus":
                 i += 1; cpuCount = Int(value(at: i, for: arg)) ?? cpuCount
-            case "--agent-port":
-                i += 1; agentPort = Int(value(at: i, for: arg)) ?? agentPort
+            case "--agent-vsock-port":
+                i += 1; agentVsockPort = Int(value(at: i, for: arg)) ?? agentVsockPort
+            case "--agent-ready-socket":
+                i += 1; agentReadySocketPath = value(at: i, for: arg)
             case "--verbose":
                 verbose = true
             case "--help", "-h":
@@ -130,7 +282,8 @@ struct VMManagerCLI {
             rootImagePath: rootImagePath,
             memoryMiB: memoryMiB,
             cpuCount: cpuCount,
-            agentPort: agentPort,
+            agentVsockPort: agentVsockPort,
+            agentReadySocketPath: agentReadySocketPath,
             verbose: verbose
         )
     }
@@ -155,7 +308,8 @@ Options:
   --initrd <path>         Optional initrd path
   --memory-mib <int>      Default 512
   --cpus <int>            Default 2
-  --agent-port <int>      Default 8080
+  --agent-vsock-port <int>  Default 7000
+  --agent-ready-socket <path> Optional unix socket path for readiness notify
   --verbose               Enable manager debug logs
   -h, --help              Show help
 """
@@ -213,21 +367,25 @@ Options:
         netDevice.attachment = netAttachment
         vmConfig.networkDevices = [netDevice]
 
+        let socketConfig = VZVirtioSocketDeviceConfiguration()
+        vmConfig.socketDevices = [socketConfig]
+
         try vmConfig.validate()
 
         let vm = VZVirtualMachine(configuration: vmConfig)
         if config.verbose {
             let kernelDesc = config.kernelPath ?? "<none>"
-            fputs("[vmmanager] bootMode=\(config.bootMode.rawValue) kernel=\(kernelDesc) rootImage=\(config.rootImagePath) memMiB=\(config.memoryMiB) cpus=\(config.cpuCount) agentPort=\(config.agentPort)\n", stderr)
+            fputs("[vmmanager] bootMode=\(config.bootMode.rawValue) kernel=\(kernelDesc) rootImage=\(config.rootImagePath) memMiB=\(config.memoryMiB) cpus=\(config.cpuCount) agentVsockPort=\(config.agentVsockPort)\n", stderr)
             fputs("[vmmanager] kernelCmdline=\(config.bootArgs)\n", stderr)
             fputs("[vmmanager] serial console attached to stdio\n", stderr)
         }
-        let runtime = VMRuntime(vm: vm, verbose: config.verbose)
+        let runtime = VMRuntime(vm: vm, config: config, verbose: config.verbose)
         runtime.startStateLogging()
         self.runtime = runtime
         vm.start { result in
             switch result {
             case .success:
+                runtime.enableVsockAgentListener()
                 print("vm started")
             case .failure(let error):
                 fputs("failed to start vm: \(error)\n", stderr)
