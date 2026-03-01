@@ -1,5 +1,9 @@
 # vmrunner
 
+> [!WARNING]
+> **Attention:** this is complete slop; just having fun over the weekend with Codex.
+> Use at your own risk. This was means to explore Apple's virtualization network and try to see how fast we can start a Linux VM.
+
 Self-contained container runner for macOS, exposed through a Go entrypoint and backed by Linux microVMs.
 
 Cold boot target: ~200ms VM bring-up (measured in this repo’s e2e benchmark path).
