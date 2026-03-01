@@ -13,10 +13,12 @@ AGENT_GO_SOURCES := $(shell find agent -type f -name '*.go')
 VM_GO_SOURCES := $(shell find vm -type f -name '*.go')
 API_CAPNP_SOURCES := $(shell find api/capnp -type f -name '*.capnp')
 API_GO_GENERATED := $(shell find api/gen/go -type f -name '*.go' 2>/dev/null)
+VMMANAGER_SIGNING_ENV := $(wildcard manager/.env.local)
 GO_CACHE_DIR := $(abspath build/.gocache)
 GO_PATH_DIR := $(abspath build/.gopath)
 GO_BUILD_ENV := GOCACHE=$(GO_CACHE_DIR) GOPATH=$(GO_PATH_DIR)
 GO_MIN_VERSION := go1.26.0
+TEST ?=
 
 .PHONY: help api agent rootfs kernel raw image vm-binaries test run run-go run-efi clean clean-kernel check-kernel require-kernel check-go
 
@@ -38,6 +40,7 @@ help:
 	@echo "  VERBOSE=1               Verbose script output"
 	@echo "  KERNEL_MODE=source      Force source kernel build"
 	@echo "  AGENT_VSOCK_PORT=7000   Agent vsock port"
+	@echo "  TEST=Regex             Optional go test -run filter for make test"
 	@echo "  MEMORY_MIB=512 CPUS=2   VM resources"
 
 check-go:
@@ -89,7 +92,7 @@ raw: build/rootfs.raw
 
 image: build/kernel build/rootfs.raw
 
-build/vmmanager: manager/run-local.sh manager/Package.swift manager/Sources/vmmanager/main.swift manager/vmmanager.entitlements
+build/vmmanager: manager/run-local.sh manager/Package.swift manager/Sources/vmmanager/main.swift manager/vmmanager.entitlements manager/vmmanager.networking.entitlements $(VMMANAGER_SIGNING_ENV)
 	@mkdir -p build
 	./manager/run-local.sh --out "$(abspath build/vmmanager)" --build-only
 
@@ -100,7 +103,7 @@ build/vm: check-go vm/go.mod $(VM_GO_SOURCES) build/.api-go.stamp $(API_GO_GENER
 vm-binaries: build/vmmanager build/vm
 
 test: check-go build/rootfs.raw require-kernel vm-binaries
-	cd vm && $(GO_BUILD_ENV) go test -count=1 -v ./...
+	cd vm && $(GO_BUILD_ENV) go test -count=1 -v $(if $(TEST),-run '$(TEST)',) ./...
 
 check-kernel: build/kernel
 	@if [[ "$$(uname -m)" == "arm64" ]]; then \

@@ -13,11 +13,13 @@ interface ByteStream {
 interface Debug {
   ping @0 () -> (message :Text);
   openByteStream @1 () -> (stream :ByteStream);
+  startBenchmarkVsock @2 (port :UInt32, totalBytes :UInt64, chunkBytes :UInt32) -> (bytesPerSec :Float64, durationNanos :UInt64);
   # openByteStream just serves the purpose of sending data.
 }
 
 interface Network {
   configureInterface @0 (ifName :Text, cidr :Text, gateway :Text);
+  setupVsockProxy @1 (port :UInt32);
 }
 
 interface Agent {

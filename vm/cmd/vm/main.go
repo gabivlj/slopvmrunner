@@ -5,20 +5,20 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	vmapi "github.com/gabrielvillalongasimon/vmrunner/api/gen/go/capnp"
 	"vmrunner/vm"
 )
 
 func main() {
 	cfg := vm.VMConfig{}
+	bootModeRaw := string(vm.BootModeLinux)
+	networkModeRaw := string(vm.NetworkModeHostOnly)
 
-	flag.StringVar(&cfg.BootMode, "boot-mode", vm.BootModeLinux, "Boot mode: linux or efi")
+	flag.StringVar(&bootModeRaw, "boot-mode", string(vm.BootModeLinux), "Boot mode: linux or efi")
 	flag.StringVar(&cfg.KernelPath, "kernel", "build/kernel", "Kernel artifact path (required in linux mode)")
 	flag.StringVar(&cfg.InitrdPath, "initrd", "", "Initrd path")
 	flag.StringVar(&cfg.RootImage, "root-image", "build/rootfs.raw", "Root disk image path")
@@ -26,12 +26,24 @@ func main() {
 	flag.IntVar(&cfg.CPUs, "cpus", 2, "VM CPU count")
 	flag.IntVar(&cfg.AgentVsockPort, "agent-vsock-port", 7000, "Agent vsock port to pass via kernel cmdline")
 	flag.StringVar(&cfg.AgentReadySocketPath, "agent-ready-socket", "build/agent-ready.sock", "Unix socket path for readiness notification")
-	flag.BoolVar(&cfg.EnableNetwork, "enable-network", true, "Attach a VM network device and configure guest networking")
-	flag.StringVar(&cfg.VMNetworkCIDR, "vm-network-cidr", "192.168.64.2/24", "Guest interface CIDR to configure via agent network capability")
-	flag.StringVar(&cfg.VMNetworkGateway, "vm-network-gateway", "", "Guest default gateway; if empty, derive first host in vm-network-cidr")
-	flag.StringVar(&cfg.VMNetworkIfName, "vm-network-ifname", "eth0", "Guest interface name to configure via agent network capability")
+	flag.BoolVar(&cfg.EnableNetwork, "enable-network", false, "Attach a VM network device")
+	flag.StringVar(&networkModeRaw, "network-mode", string(vm.NetworkModeHostOnly), "VM network mode: nat, bridged, or hostonly")
+	flag.StringVar(&cfg.BridgeInterface, "bridge-interface", "", "Host interface for bridged/hostonly mode (empty = auto)")
 	flag.BoolVar(&cfg.Verbose, "verbose", true, "Enable vmmanager verbose logs")
 	flag.Parse()
+
+	bootMode, err := vm.ParseBootMode(bootModeRaw)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	cfg.BootMode = bootMode
+	networkMode, err := vm.ParseNetworkMode(networkModeRaw)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	cfg.NetworkMode = networkMode
 
 	logLevel := slog.LevelInfo
 	if cfg.Verbose {
@@ -86,80 +98,8 @@ func main() {
 
 	logger.Info("agent ping ok", "message", msg, "time to e2e", time.Since(now), "pong latency", time.Since(pingNow))
 
-	if err := configureGuestNetwork(ctx, logger, cfg, agent); err != nil {
-		logger.Error("guest network configuration failed", "error", err)
-		_ = vmCtx.Kill()
-		os.Exit(1)
-	}
-
 	if err := <-vmCtx.WaitCh(); err != nil {
 		logger.Error("vm exited with error", "error", err)
 		os.Exit(1)
 	}
-}
-
-func configureGuestNetwork(ctx context.Context, logger *slog.Logger, cfg vm.VMConfig, agent vmapi.Agent) error {
-	if !cfg.EnableNetwork || cfg.VMNetworkCIDR == "" {
-		return nil
-	}
-
-	networkIfName := cfg.VMNetworkIfName
-	if networkIfName == "" {
-		networkIfName = "eth0"
-	}
-
-	gateway := cfg.VMNetworkGateway
-	if gateway == "" {
-		derivedGateway, err := defaultGatewayFromCIDR(cfg.VMNetworkCIDR)
-		if err != nil {
-			return fmt.Errorf("derive gateway from cidr %q: %w", cfg.VMNetworkCIDR, err)
-		}
-		gateway = derivedGateway
-	}
-
-	netCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	networkFuture, release := agent.Network(netCtx, nil)
-	defer release()
-	networkRes, err := networkFuture.Struct()
-	if err != nil {
-		return fmt.Errorf("fetch network capability: %w", err)
-	}
-	network := networkRes.Network()
-	defer network.Release()
-	if !network.IsValid() {
-		return fmt.Errorf("received invalid network capability")
-	}
-
-	configFuture, configRelease := network.ConfigureInterface(netCtx, func(p vmapi.Network_configureInterface_Params) error {
-		if err := p.SetIfName(networkIfName); err != nil {
-			return err
-		}
-		if err := p.SetCidr(cfg.VMNetworkCIDR); err != nil {
-			return err
-		}
-		return p.SetGateway(gateway)
-	})
-	defer configRelease()
-	if _, err := configFuture.Struct(); err != nil {
-		return fmt.Errorf("configure guest network: %w", err)
-	}
-
-	logger.Info("guest network configured", "ifname", networkIfName, "cidr", cfg.VMNetworkCIDR, "gateway", gateway)
-	return nil
-}
-
-func defaultGatewayFromCIDR(cidr string) (string, error) {
-	prefix, err := netip.ParsePrefix(cidr)
-	if err != nil {
-		return "", err
-	}
-	base := prefix.Masked().Addr()
-	if !base.Is4() {
-		return "", fmt.Errorf("only IPv4 CIDR is supported right now: %q", cidr)
-	}
-	base4 := base.As4()
-	base4[3]++
-	return netip.AddrFrom4(base4).String(), nil
 }

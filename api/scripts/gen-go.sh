@@ -4,7 +4,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_DIR="$API_DIR/gen/go"
-SCHEMA_DIR="$API_DIR/capnp"
 
 CAPNPC_GO="${CAPNPC_GO:-$(command -v capnpc-go || true)}"
 if [[ -z "${CAPNPC_GO}" ]]; then
@@ -18,11 +17,12 @@ STD_DIR="$CAPNP_MOD_DIR/std"
 
 mkdir -p "$OUT_DIR"
 
+pushd "$API_DIR" >/dev/null
 capnp compile \
-  -I"$SCHEMA_DIR" \
+  -I"capnp" \
   -I"$STD_DIR" \
-  -o"$CAPNPC_GO:$OUT_DIR" \
-  "$SCHEMA_DIR/agent.capnp"
+  -o"$CAPNPC_GO:gen/go" \
+  "capnp/agent.capnp"
+popd >/dev/null
 
 echo "generated Go bindings in $OUT_DIR"
-

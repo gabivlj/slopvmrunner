@@ -10,6 +10,7 @@ import (
 	server "capnproto.org/go/capnp/v3/server"
 	stream "capnproto.org/go/capnp/v3/std/capnp/stream"
 	context "context"
+	math "math"
 )
 
 type ByteStream capnp.Client
@@ -474,6 +475,26 @@ func (c Debug) OpenByteStream(ctx context.Context, params func(Debug_openByteStr
 
 }
 
+func (c Debug) StartBenchmarkVsock(ctx context.Context, params func(Debug_startBenchmarkVsock_Params) error) (Debug_startBenchmarkVsock_Results_Future, capnp.ReleaseFunc) {
+
+	s := capnp.Send{
+		Method: capnp.Method{
+			InterfaceID:   0x9bfe39fa0de18382,
+			MethodID:      2,
+			InterfaceName: "capnp/agent.capnp:Debug",
+			MethodName:    "startBenchmarkVsock",
+		},
+	}
+	if params != nil {
+		s.ArgsSize = capnp.ObjectSize{DataSize: 16, PointerCount: 0}
+		s.PlaceArgs = func(s capnp.Struct) error { return params(Debug_startBenchmarkVsock_Params(s)) }
+	}
+
+	ans, release := capnp.Client(c).SendCall(ctx, s)
+	return Debug_startBenchmarkVsock_Results_Future{Future: ans.Future()}, release
+
+}
+
 func (c Debug) WaitStreaming() error {
 	return capnp.Client(c).WaitStreaming()
 }
@@ -550,6 +571,8 @@ type Debug_Server interface {
 	Ping(context.Context, Debug_ping) error
 
 	OpenByteStream(context.Context, Debug_openByteStream) error
+
+	StartBenchmarkVsock(context.Context, Debug_startBenchmarkVsock) error
 }
 
 // Debug_NewServer creates a new Server from an implementation of Debug_Server.
@@ -568,7 +591,7 @@ func Debug_ServerToClient(s Debug_Server) Debug {
 // This can be used to create a more complicated Server.
 func Debug_Methods(methods []server.Method, s Debug_Server) []server.Method {
 	if cap(methods) == 0 {
-		methods = make([]server.Method, 0, 2)
+		methods = make([]server.Method, 0, 3)
 	}
 
 	methods = append(methods, server.Method{
@@ -592,6 +615,18 @@ func Debug_Methods(methods []server.Method, s Debug_Server) []server.Method {
 		},
 		Impl: func(ctx context.Context, call *server.Call) error {
 			return s.OpenByteStream(ctx, Debug_openByteStream{call})
+		},
+	})
+
+	methods = append(methods, server.Method{
+		Method: capnp.Method{
+			InterfaceID:   0x9bfe39fa0de18382,
+			MethodID:      2,
+			InterfaceName: "capnp/agent.capnp:Debug",
+			MethodName:    "startBenchmarkVsock",
+		},
+		Impl: func(ctx context.Context, call *server.Call) error {
+			return s.StartBenchmarkVsock(ctx, Debug_startBenchmarkVsock{call})
 		},
 	})
 
@@ -630,6 +665,23 @@ func (c Debug_openByteStream) Args() Debug_openByteStream_Params {
 func (c Debug_openByteStream) AllocResults() (Debug_openByteStream_Results, error) {
 	r, err := c.Call.AllocResults(capnp.ObjectSize{DataSize: 0, PointerCount: 1})
 	return Debug_openByteStream_Results(r), err
+}
+
+// Debug_startBenchmarkVsock holds the state for a server call to Debug.startBenchmarkVsock.
+// See server.Call for documentation.
+type Debug_startBenchmarkVsock struct {
+	*server.Call
+}
+
+// Args returns the call's arguments.
+func (c Debug_startBenchmarkVsock) Args() Debug_startBenchmarkVsock_Params {
+	return Debug_startBenchmarkVsock_Params(c.Call.Args())
+}
+
+// AllocResults allocates the results struct.
+func (c Debug_startBenchmarkVsock) AllocResults() (Debug_startBenchmarkVsock_Results, error) {
+	r, err := c.Call.AllocResults(capnp.ObjectSize{DataSize: 16, PointerCount: 0})
+	return Debug_startBenchmarkVsock_Results(r), err
 }
 
 // Debug_List is a list of Debug.
@@ -938,6 +990,174 @@ func (p Debug_openByteStream_Results_Future) Stream() ByteStream {
 	return ByteStream(p.Future.Field(0, nil).Client())
 }
 
+type Debug_startBenchmarkVsock_Params capnp.Struct
+
+// Debug_startBenchmarkVsock_Params_TypeID is the unique identifier for the type Debug_startBenchmarkVsock_Params.
+const Debug_startBenchmarkVsock_Params_TypeID = 0xd02dccb90bb2ab63
+
+func NewDebug_startBenchmarkVsock_Params(s *capnp.Segment) (Debug_startBenchmarkVsock_Params, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 16, PointerCount: 0})
+	return Debug_startBenchmarkVsock_Params(st), err
+}
+
+func NewRootDebug_startBenchmarkVsock_Params(s *capnp.Segment) (Debug_startBenchmarkVsock_Params, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 16, PointerCount: 0})
+	return Debug_startBenchmarkVsock_Params(st), err
+}
+
+func ReadRootDebug_startBenchmarkVsock_Params(msg *capnp.Message) (Debug_startBenchmarkVsock_Params, error) {
+	root, err := msg.Root()
+	return Debug_startBenchmarkVsock_Params(root.Struct()), err
+}
+
+func (s Debug_startBenchmarkVsock_Params) String() string {
+	str, _ := text.Marshal(0xd02dccb90bb2ab63, capnp.Struct(s))
+	return str
+}
+
+func (s Debug_startBenchmarkVsock_Params) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Debug_startBenchmarkVsock_Params) DecodeFromPtr(p capnp.Ptr) Debug_startBenchmarkVsock_Params {
+	return Debug_startBenchmarkVsock_Params(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Debug_startBenchmarkVsock_Params) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Debug_startBenchmarkVsock_Params) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Debug_startBenchmarkVsock_Params) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Debug_startBenchmarkVsock_Params) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+func (s Debug_startBenchmarkVsock_Params) Port() uint32 {
+	return capnp.Struct(s).Uint32(0)
+}
+
+func (s Debug_startBenchmarkVsock_Params) SetPort(v uint32) {
+	capnp.Struct(s).SetUint32(0, v)
+}
+
+func (s Debug_startBenchmarkVsock_Params) TotalBytes() uint64 {
+	return capnp.Struct(s).Uint64(8)
+}
+
+func (s Debug_startBenchmarkVsock_Params) SetTotalBytes(v uint64) {
+	capnp.Struct(s).SetUint64(8, v)
+}
+
+func (s Debug_startBenchmarkVsock_Params) ChunkBytes() uint32 {
+	return capnp.Struct(s).Uint32(4)
+}
+
+func (s Debug_startBenchmarkVsock_Params) SetChunkBytes(v uint32) {
+	capnp.Struct(s).SetUint32(4, v)
+}
+
+// Debug_startBenchmarkVsock_Params_List is a list of Debug_startBenchmarkVsock_Params.
+type Debug_startBenchmarkVsock_Params_List = capnp.StructList[Debug_startBenchmarkVsock_Params]
+
+// NewDebug_startBenchmarkVsock_Params creates a new list of Debug_startBenchmarkVsock_Params.
+func NewDebug_startBenchmarkVsock_Params_List(s *capnp.Segment, sz int32) (Debug_startBenchmarkVsock_Params_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 16, PointerCount: 0}, sz)
+	return capnp.StructList[Debug_startBenchmarkVsock_Params](l), err
+}
+
+// Debug_startBenchmarkVsock_Params_Future is a wrapper for a Debug_startBenchmarkVsock_Params promised by a client call.
+type Debug_startBenchmarkVsock_Params_Future struct{ *capnp.Future }
+
+func (f Debug_startBenchmarkVsock_Params_Future) Struct() (Debug_startBenchmarkVsock_Params, error) {
+	p, err := f.Future.Ptr()
+	return Debug_startBenchmarkVsock_Params(p.Struct()), err
+}
+
+type Debug_startBenchmarkVsock_Results capnp.Struct
+
+// Debug_startBenchmarkVsock_Results_TypeID is the unique identifier for the type Debug_startBenchmarkVsock_Results.
+const Debug_startBenchmarkVsock_Results_TypeID = 0xf14ced2f372e0c33
+
+func NewDebug_startBenchmarkVsock_Results(s *capnp.Segment) (Debug_startBenchmarkVsock_Results, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 16, PointerCount: 0})
+	return Debug_startBenchmarkVsock_Results(st), err
+}
+
+func NewRootDebug_startBenchmarkVsock_Results(s *capnp.Segment) (Debug_startBenchmarkVsock_Results, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 16, PointerCount: 0})
+	return Debug_startBenchmarkVsock_Results(st), err
+}
+
+func ReadRootDebug_startBenchmarkVsock_Results(msg *capnp.Message) (Debug_startBenchmarkVsock_Results, error) {
+	root, err := msg.Root()
+	return Debug_startBenchmarkVsock_Results(root.Struct()), err
+}
+
+func (s Debug_startBenchmarkVsock_Results) String() string {
+	str, _ := text.Marshal(0xf14ced2f372e0c33, capnp.Struct(s))
+	return str
+}
+
+func (s Debug_startBenchmarkVsock_Results) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Debug_startBenchmarkVsock_Results) DecodeFromPtr(p capnp.Ptr) Debug_startBenchmarkVsock_Results {
+	return Debug_startBenchmarkVsock_Results(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Debug_startBenchmarkVsock_Results) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Debug_startBenchmarkVsock_Results) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Debug_startBenchmarkVsock_Results) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Debug_startBenchmarkVsock_Results) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+func (s Debug_startBenchmarkVsock_Results) BytesPerSec() float64 {
+	return math.Float64frombits(capnp.Struct(s).Uint64(0))
+}
+
+func (s Debug_startBenchmarkVsock_Results) SetBytesPerSec(v float64) {
+	capnp.Struct(s).SetUint64(0, math.Float64bits(v))
+}
+
+func (s Debug_startBenchmarkVsock_Results) DurationNanos() uint64 {
+	return capnp.Struct(s).Uint64(8)
+}
+
+func (s Debug_startBenchmarkVsock_Results) SetDurationNanos(v uint64) {
+	capnp.Struct(s).SetUint64(8, v)
+}
+
+// Debug_startBenchmarkVsock_Results_List is a list of Debug_startBenchmarkVsock_Results.
+type Debug_startBenchmarkVsock_Results_List = capnp.StructList[Debug_startBenchmarkVsock_Results]
+
+// NewDebug_startBenchmarkVsock_Results creates a new list of Debug_startBenchmarkVsock_Results.
+func NewDebug_startBenchmarkVsock_Results_List(s *capnp.Segment, sz int32) (Debug_startBenchmarkVsock_Results_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 16, PointerCount: 0}, sz)
+	return capnp.StructList[Debug_startBenchmarkVsock_Results](l), err
+}
+
+// Debug_startBenchmarkVsock_Results_Future is a wrapper for a Debug_startBenchmarkVsock_Results promised by a client call.
+type Debug_startBenchmarkVsock_Results_Future struct{ *capnp.Future }
+
+func (f Debug_startBenchmarkVsock_Results_Future) Struct() (Debug_startBenchmarkVsock_Results, error) {
+	p, err := f.Future.Ptr()
+	return Debug_startBenchmarkVsock_Results(p.Struct()), err
+}
+
 type Network capnp.Client
 
 // Network_TypeID is the unique identifier for the type Network.
@@ -960,6 +1180,26 @@ func (c Network) ConfigureInterface(ctx context.Context, params func(Network_con
 
 	ans, release := capnp.Client(c).SendCall(ctx, s)
 	return Network_configureInterface_Results_Future{Future: ans.Future()}, release
+
+}
+
+func (c Network) SetupVsockProxy(ctx context.Context, params func(Network_setupVsockProxy_Params) error) (Network_setupVsockProxy_Results_Future, capnp.ReleaseFunc) {
+
+	s := capnp.Send{
+		Method: capnp.Method{
+			InterfaceID:   0x9fe9a01a06e6f3f2,
+			MethodID:      1,
+			InterfaceName: "capnp/agent.capnp:Network",
+			MethodName:    "setupVsockProxy",
+		},
+	}
+	if params != nil {
+		s.ArgsSize = capnp.ObjectSize{DataSize: 8, PointerCount: 0}
+		s.PlaceArgs = func(s capnp.Struct) error { return params(Network_setupVsockProxy_Params(s)) }
+	}
+
+	ans, release := capnp.Client(c).SendCall(ctx, s)
+	return Network_setupVsockProxy_Results_Future{Future: ans.Future()}, release
 
 }
 
@@ -1037,6 +1277,8 @@ func (c Network) GetFlowLimiter() fc.FlowLimiter {
 // A Network_Server is a Network with a local implementation.
 type Network_Server interface {
 	ConfigureInterface(context.Context, Network_configureInterface) error
+
+	SetupVsockProxy(context.Context, Network_setupVsockProxy) error
 }
 
 // Network_NewServer creates a new Server from an implementation of Network_Server.
@@ -1055,7 +1297,7 @@ func Network_ServerToClient(s Network_Server) Network {
 // This can be used to create a more complicated Server.
 func Network_Methods(methods []server.Method, s Network_Server) []server.Method {
 	if cap(methods) == 0 {
-		methods = make([]server.Method, 0, 1)
+		methods = make([]server.Method, 0, 2)
 	}
 
 	methods = append(methods, server.Method{
@@ -1067,6 +1309,18 @@ func Network_Methods(methods []server.Method, s Network_Server) []server.Method 
 		},
 		Impl: func(ctx context.Context, call *server.Call) error {
 			return s.ConfigureInterface(ctx, Network_configureInterface{call})
+		},
+	})
+
+	methods = append(methods, server.Method{
+		Method: capnp.Method{
+			InterfaceID:   0x9fe9a01a06e6f3f2,
+			MethodID:      1,
+			InterfaceName: "capnp/agent.capnp:Network",
+			MethodName:    "setupVsockProxy",
+		},
+		Impl: func(ctx context.Context, call *server.Call) error {
+			return s.SetupVsockProxy(ctx, Network_setupVsockProxy{call})
 		},
 	})
 
@@ -1088,6 +1342,23 @@ func (c Network_configureInterface) Args() Network_configureInterface_Params {
 func (c Network_configureInterface) AllocResults() (Network_configureInterface_Results, error) {
 	r, err := c.Call.AllocResults(capnp.ObjectSize{DataSize: 0, PointerCount: 0})
 	return Network_configureInterface_Results(r), err
+}
+
+// Network_setupVsockProxy holds the state for a server call to Network.setupVsockProxy.
+// See server.Call for documentation.
+type Network_setupVsockProxy struct {
+	*server.Call
+}
+
+// Args returns the call's arguments.
+func (c Network_setupVsockProxy) Args() Network_setupVsockProxy_Params {
+	return Network_setupVsockProxy_Params(c.Call.Args())
+}
+
+// AllocResults allocates the results struct.
+func (c Network_setupVsockProxy) AllocResults() (Network_setupVsockProxy_Results, error) {
+	r, err := c.Call.AllocResults(capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Network_setupVsockProxy_Results(r), err
 }
 
 // Network_List is a list of Network.
@@ -1280,6 +1551,143 @@ type Network_configureInterface_Results_Future struct{ *capnp.Future }
 func (f Network_configureInterface_Results_Future) Struct() (Network_configureInterface_Results, error) {
 	p, err := f.Future.Ptr()
 	return Network_configureInterface_Results(p.Struct()), err
+}
+
+type Network_setupVsockProxy_Params capnp.Struct
+
+// Network_setupVsockProxy_Params_TypeID is the unique identifier for the type Network_setupVsockProxy_Params.
+const Network_setupVsockProxy_Params_TypeID = 0xd814659ac0b8ea38
+
+func NewNetwork_setupVsockProxy_Params(s *capnp.Segment) (Network_setupVsockProxy_Params, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 8, PointerCount: 0})
+	return Network_setupVsockProxy_Params(st), err
+}
+
+func NewRootNetwork_setupVsockProxy_Params(s *capnp.Segment) (Network_setupVsockProxy_Params, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 8, PointerCount: 0})
+	return Network_setupVsockProxy_Params(st), err
+}
+
+func ReadRootNetwork_setupVsockProxy_Params(msg *capnp.Message) (Network_setupVsockProxy_Params, error) {
+	root, err := msg.Root()
+	return Network_setupVsockProxy_Params(root.Struct()), err
+}
+
+func (s Network_setupVsockProxy_Params) String() string {
+	str, _ := text.Marshal(0xd814659ac0b8ea38, capnp.Struct(s))
+	return str
+}
+
+func (s Network_setupVsockProxy_Params) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Network_setupVsockProxy_Params) DecodeFromPtr(p capnp.Ptr) Network_setupVsockProxy_Params {
+	return Network_setupVsockProxy_Params(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Network_setupVsockProxy_Params) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Network_setupVsockProxy_Params) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Network_setupVsockProxy_Params) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Network_setupVsockProxy_Params) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+func (s Network_setupVsockProxy_Params) Port() uint32 {
+	return capnp.Struct(s).Uint32(0)
+}
+
+func (s Network_setupVsockProxy_Params) SetPort(v uint32) {
+	capnp.Struct(s).SetUint32(0, v)
+}
+
+// Network_setupVsockProxy_Params_List is a list of Network_setupVsockProxy_Params.
+type Network_setupVsockProxy_Params_List = capnp.StructList[Network_setupVsockProxy_Params]
+
+// NewNetwork_setupVsockProxy_Params creates a new list of Network_setupVsockProxy_Params.
+func NewNetwork_setupVsockProxy_Params_List(s *capnp.Segment, sz int32) (Network_setupVsockProxy_Params_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 8, PointerCount: 0}, sz)
+	return capnp.StructList[Network_setupVsockProxy_Params](l), err
+}
+
+// Network_setupVsockProxy_Params_Future is a wrapper for a Network_setupVsockProxy_Params promised by a client call.
+type Network_setupVsockProxy_Params_Future struct{ *capnp.Future }
+
+func (f Network_setupVsockProxy_Params_Future) Struct() (Network_setupVsockProxy_Params, error) {
+	p, err := f.Future.Ptr()
+	return Network_setupVsockProxy_Params(p.Struct()), err
+}
+
+type Network_setupVsockProxy_Results capnp.Struct
+
+// Network_setupVsockProxy_Results_TypeID is the unique identifier for the type Network_setupVsockProxy_Results.
+const Network_setupVsockProxy_Results_TypeID = 0xce4b1363ebaaea03
+
+func NewNetwork_setupVsockProxy_Results(s *capnp.Segment) (Network_setupVsockProxy_Results, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Network_setupVsockProxy_Results(st), err
+}
+
+func NewRootNetwork_setupVsockProxy_Results(s *capnp.Segment) (Network_setupVsockProxy_Results, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return Network_setupVsockProxy_Results(st), err
+}
+
+func ReadRootNetwork_setupVsockProxy_Results(msg *capnp.Message) (Network_setupVsockProxy_Results, error) {
+	root, err := msg.Root()
+	return Network_setupVsockProxy_Results(root.Struct()), err
+}
+
+func (s Network_setupVsockProxy_Results) String() string {
+	str, _ := text.Marshal(0xce4b1363ebaaea03, capnp.Struct(s))
+	return str
+}
+
+func (s Network_setupVsockProxy_Results) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
+	return capnp.Struct(s).EncodeAsPtr(seg)
+}
+
+func (Network_setupVsockProxy_Results) DecodeFromPtr(p capnp.Ptr) Network_setupVsockProxy_Results {
+	return Network_setupVsockProxy_Results(capnp.Struct{}.DecodeFromPtr(p))
+}
+
+func (s Network_setupVsockProxy_Results) ToPtr() capnp.Ptr {
+	return capnp.Struct(s).ToPtr()
+}
+func (s Network_setupVsockProxy_Results) IsValid() bool {
+	return capnp.Struct(s).IsValid()
+}
+
+func (s Network_setupVsockProxy_Results) Message() *capnp.Message {
+	return capnp.Struct(s).Message()
+}
+
+func (s Network_setupVsockProxy_Results) Segment() *capnp.Segment {
+	return capnp.Struct(s).Segment()
+}
+
+// Network_setupVsockProxy_Results_List is a list of Network_setupVsockProxy_Results.
+type Network_setupVsockProxy_Results_List = capnp.StructList[Network_setupVsockProxy_Results]
+
+// NewNetwork_setupVsockProxy_Results creates a new list of Network_setupVsockProxy_Results.
+func NewNetwork_setupVsockProxy_Results_List(s *capnp.Segment, sz int32) (Network_setupVsockProxy_Results_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0}, sz)
+	return capnp.StructList[Network_setupVsockProxy_Results](l), err
+}
+
+// Network_setupVsockProxy_Results_Future is a wrapper for a Network_setupVsockProxy_Results promised by a client call.
+type Network_setupVsockProxy_Results_Future struct{ *capnp.Future }
+
+func (f Network_setupVsockProxy_Results_Future) Struct() (Network_setupVsockProxy_Results, error) {
+	p, err := f.Future.Ptr()
+	return Network_setupVsockProxy_Results(p.Struct()), err
 }
 
 type Agent capnp.Client
@@ -1794,65 +2202,84 @@ func (p Agent_network_Results_Future) Network() Network {
 	return Network(p.Future.Field(0, nil).Client())
 }
 
-const schema_9a11c8b7284a61de = "x\xda\x8cU_h\x1cE\x18\xff\xbe\xdd\x99^\xc0;" +
-	"\x8eq#5\xb1\x1a\xd4ki#\x9eM\x8a\x0f\x09\x94" +
-	";c\xb4M\xb1\xcd\xedi\x1f\xfaPdz\x99\xacG" +
-	"z{\xe9\xee\x1ei\xfa\x120H\xd4\x17\x0d>5E" +
-	"Z\xc4\x80-j\x10\xb4\xd2H\xa1\x8d/\xa2\xf8`K" +
-	"\xb1\xa8\x14\xc4\xa2(\x15\xa1ZE\x1f\xdc2\xb3\x9d\xec" +
-	"^\x92\xa3y\xdb\xd9\xef\xfb}\xbf\xdf\xf7g\xbe\xd9>" +
-	"h\x14IO\xe6d\x1b\x18\xf6\x08\xdd\x10\xb2\xcaw\x8d" +
-	"\xc5\x8f\x7f\x99\x01v\xaf\x19^\xe3{\xb6~\xfa\x05\x9b" +
-	"\x03@\xebI\xb2d\xed$)\x00\xab\x8f\xccX\xaf\xc9" +
-	"\xaf\xf0\xda[_\x0e\x8b\xbf\xfc7\x81=\x88\x00\xf2\xd7" +
-	"\x8e#\xa4\x8c@\xc2\x97\xa7\x7f\xcc\xfc\xd7\xf7\xff\x89U" +
-	"a\x0e\x92%K\xa80\x9c\xccX\x9f\xa807\xff\xfc" +
-	"yC\xe7\xa9_O\xaer~\x9b\\\xb2N+\xe7y" +
-	"\xb2\xcb\xba\xa2\x9cO\xfcs#=\x9c\xc3y`\xf7k" +
-	"\xce\xf3\xc4\x93\x9c\x0fl\x1a\xde|a\xff\x8d3\xc0:" +
-	"\x11\x80\x9a\xd2t\x9a\xbc\x83\x80\xd69\xb2\x00\x18.\xdc" +
-	"\xaa\x9e\xfd\xe3\xd4\xfe\xf7\x13P\x9b\xf6K\xe8\xab\xb3K" +
-	"\x8b\x97\xa7\x1f_LX\xfa\xe8#\xd2rt\xfb+\x9d" +
-	"\xbb\x9f\xbeo)\xb2P\x94\xa6\x87i\xb7\x0c\xba\x8d\x16" +
-	"\x00\xc3Y~k\xdbC\xed\xc3\x97\x12\xd0!i'\xe1" +
-	"\xe7sGg\x8f?\xfb\xe8\xe5\xa8:\x11\xb4\x87\x96%" +
-	"t\xa7\x82~\xff\xae\xff\xfa\xc6t\xef\xd5H\xb0\x82\x1e" +
-	"\xa4g$\xf4\xdf\xec\xc5-\x17\xdf(_M\xb2\xee\xa5" +
-	"\xc7$\xf4\x80\x82^\xdfu\xee\xb1\xcf\x16\xb6\xfe\x94\xa8" +
-	"\xfc$\xdd#\xa1\xf5\xa2\xb3q\xd3\xf5\xe9\xdfW\x15S" +
-	"\xd0\xdf\xac#T\x16\xb3Fg\xac\xf3TU\xfe=q" +
-	"\xf6\xab-\xdf\xdeL\xf2\xcc\xd3\x01\xc9\xf3\x81\xe2\x99\xfe" +
-	"\xf0\x9eo~\xe88\xf4w\xd2\xe1k\xda+\x1d\xae\xd0" +
-	"\x02\x1c\x08+|\xdc\x1d\x7f\x82;\x86p\x83\xbc:\xf4" +
-	"?\xe5\x087\x80\x12\xa2\xddfR\x80\xe5\x0a\xa1\x0e\xc6" +
-	"zz\xc1`\x9bS\x18\xb7\x04\xb5\x12\xd61\x00\x06\xcb" +
-	"\xa4\xbaF\xc4\xa1\x86S\xc4)W\x04\x13uo\xac\x88" +
-	"%\xc4e6\x12\xb3\x0dL\x06\xe2\xf9\xc0\x13\xbc\x96\x1f" +
-	"\xa9\xbb\"W\x16~\xe3p\x80\xfeZ\xca\x06e\xcc\x84" +
-	"2\xddv\xd4]f=\xddZ\x99\x9e3\xd4\xbd`\x1d" +
-	"\xc7\xc0`,\x95\x1d\xaf\xbaN\x11\xc3\xfa\xb8p%9" +
-	"\x14\"\xfaf\x85\x09\xd6}*\x03\x1c\x93\xbcD\xf1\xea" +
-	"IE=\x01\x8c\xcd\xa9\xac\xc3J\xdd\x1d\xad:\x0d\x0f" +
-	"\xc5\x90\x1b\x08o\x94\x9b\x15\xd12u\x95N^\xeb\x88" +
-	"T\xe4J]\xdc\xe3\xb58}\xbaR\xc8X^\x93h" +
-	"\x8e\x8a\xc8\x95\xb8\x97\xe25\xdfN\x9b\x04\x80 \x00{" +
-	"\xa6\x1f\xc0.\x9ah?g ClG\xf9s\xa8\x1b" +
-	"\xc0\x1e4\xd1.\x19\xc8\x0c\xa3\x1d\x0d\x00\xb6w\x00\xc0" +
-	"\xdem\xa2\xfd\x82\x81\x85\xea\xe8>^\x13\x98\x06\x03\xd3" +
-	"\x80\xd9Ju\xc4\xd3\x87)\x87\x07b\x82O\xea\xf3\xb2" +
-	"Ds\xc5\xec\xe4\xef\xf4<W(5\xe7b\xae\xcc]" +
-	"\xb6Bk\xbf\x8bWY\xf8\xd9\xc6\xe1\xc0\xb7\xc9r\x8a" +
-	"\x19)\xbc\xcdD\xbb\xdd\xc0\xa9\x9a\xf0}\xee\x88\xbb\x8b" +
-	"S\x83\x99+\xf1l\x93\xb4\xb5'r\xc2\xab\x06\xaa\xb8" +
-	"\xbc\x86M\xcc\xbd1sW\xe5\xa5\x86;\x86\x1900" +
-	"\x93\xe0]_\xdftV\xeb\x1e\x8frA\xdd\x8f&1" +
-	"\xfd\xb1\x98\x82\xaf\xdc\x90\xc5{\x04\x10\x19\xac\xeb\xeaE" +
-	"\xdd\x02X\xeb\x12D\xbeY\xe9\x1c\xdf?\xbd!\xd1\xfd" +
-	"\xe8\xc2\xc4\x8e\xb9\x17\x8f'6\x83\xdep\xa8\x1f\x19\xd6" +
-	"\xd1\x1dm\x06U\xd4\"f%g\xcb\xbb\xd1<H\xd1" +
-	"R\xf0\xa1U\xf3\xef\xf8!\x8b\xdf\xa2\x15i\xb7\x18\x83" +
-	"\xb2\xe8ZU\xcedo\x95\x17\xb2\xf8=\x8c\xc2\xde\x0e" +
-	"\x00\x00\xff\xff\x12\x8c5T"
+const schema_9a11c8b7284a61de = "x\xda\x94V_l\x14\xd5\x17>\xe7\xce\xce\xce6\xdd" +
+	"\xcd\xe6\xfe\xa6\x04\xda\x1f\xd8\xa0-\x81\x9a\x16Z4\xda" +
+	"\xc6d\x97\x0a\x0a\x08tg\xb1$\x1a\x8d\x99N/\xcb" +
+	"f\xd9\x99ff6\xa5$\x86HC\xaa\xbch5>" +
+	"P\x1e$D\x13\x83F\xa2Q\x14|\x81\x1a\xe3\xdf\x18" +
+	"\x85\x07\x89\x7fH\x88\xa8\x01!F\xb4\x1aMt\xcc\x9d" +
+	"\xe1\xee\xccv\xdbX\xdev\xf6~\xe7\x9c\xef|\xe7;" +
+	"wfML\xca\xc6\xbaS^\x03\x10\xcd\x95\xe3\x1e5" +
+	"\xbe\xaa\x9cz\xf3\xc7\x09\xa0\xff\x93\xbc\x0b\xfa\xe6\x95o" +
+	"\x7fH\xa7\x00P\xfd>6\xad^\x8b)\x00\xea\xe5\xd8" +
+	"\x84\xda++\x00\xde\x85\xe7>\x1e`\xbf9\xcf\x00]" +
+	"\x86\x00\xfcp\xedr9\x8f\x10\xf3\xf6\x8f_L\xfd\xd5" +
+	"\xfb\xcf\xe1\xba4)yZ]\xc4\x83U*\x7f\xa0>" +
+	"\xef\xa7\xb9\xfe\xeb\x0f\xf1\x96#\x97_\xa8\x03?.\x9f" +
+	"U\x9f\xf2\xc1\x07\xe4\x09\xf5\xa2\x0f>\xfc\xc7\xd5\xe4@" +
+	"\x1b\xbe\x04t\x89\xa8\xf9\x91l\xf3\x9a\xff_:\xd0~" +
+	"z\xf0\xea1\xa0-\x08 K\xfc\xe8-\xf9(\x02\xaa" +
+	"\xef\xcb\xc7\x01\xbd\xe33\xc5\x13?\x1f\x19|5\x12\xfa" +
+	"h\xbc\x8f\x87>99}\xea\xdcx\xe7\xa9\xc8\xc9\x86" +
+	"\xf8\xad\xfcd\xcf\x9a\x03-\x1b\xef]4\x1d\x9c\xc8\xc8" +
+	"\x8f:\xe3\x1d<\xe9\x9d\xf1\x0c\xa0']9\xf6\x93\xa1" +
+	">\xf0YP\xd5\x0f\x1d\x8c?\xcbC\x8dW\xdeh<" +
+	"\xf9i\xe7\xe7\xa0-AR\xcd:\xc5C\x07\xe3\x9c\xcf" +
+	"\xa4>\xb3\xea\x96\xa6\x81\xb3\x91\xaa3<u\xcc{o" +
+	"j\xcf\xe4\xa1\xfbn;\x17\x08\x1bT\xfd6\x9e\xe7\xa1" +
+	"\x97\xfd\xaaw_y\xe7\xf4\x14k:\x0fZ\x0b\x8a\xd8" +
+	"\x06\xe5 \x074+\x1c\xf0\xf5\x8b\xce\xc1\xc5\xc9\x9e\xf3" +
+	"\x11Z\xbd\xca1\x9e\xfb\xcf\xf4\x99\x15g\x9e\xce\x9f\x8f" +
+	"v\xb4J\xd9\xebw\xe4\x87^\xba\xff\xe4\xed\xef\x1e_" +
+	"\xf9]d\xaa\x83\xcaf\x1eje\x0b\x8b\x97^\x1a\xbf" +
+	"V7\xa8u\xca\x15u\xab\xc2\x07\xb5I\x99P\x0f\xf1" +
+	"_\xde\xdad\xd7]\xab\xafm\xf9%\xda\xfe\x13\x8a?" +
+	"\x8eIe\x14\xd0\xbb\xfe2;\xf1\xc9\x8a/\xafG\x89" +
+	"\xcc(\xfd\x1c\xf0\xb7Od\xfc\xb5\xc6/\xbei\x1e\xfa" +
+	"=\x0aX\x96\xe8\xe1\x80\xf6D\x06\x1e\xf2\x0c}\xc4\x1c" +
+	"Y\xad\x17\x083\xdd.\xff\xa1o]\x81\x99.\xe4\x10" +
+	"\xb5\x84$\x03T5F\x91\x8cv\xf7\x00\xa1\xed\x0a\x86" +
+	"~@\xc1\x846\xf7\x03\xa1)\xa5u\x98\x0dU\x0aY" +
+	"\xdcg2w\xd4\xb2KY\xcc!V\xab\xc5\xc2j\xfd" +
+	"c.\xdb\xee\xdaL/w\x0d[&k\xcb3\xa7\xb2" +
+	"\xdbEg.f\xebyN\x9fY\xd2g&<\x87\xc2" +
+	"bT\xeb\x00B7pf\xc2\xe4(\x86E{\xf7\x02" +
+	"\xa1\xdd\x0a\x92\xaa\xadP\x08L\xdb\x8f\x02\xa1\xcb\x95\xf4" +
+	"H\xd1,d\xd1\xb3F\x98\xc9\x89A&\xa0\x96E\xcf" +
+	"qu\xdb\xedg&\x1a\xbb\xca\xba]\xda\xe1(\x961" +
+	"\xab\xab\x08\xd3m~\xd7X\x0aU\x14\xab\x85\xc2V\xb4" +
+	"{\x0a\x08\xed\xe4\\\x85\x15Ql\x02]\xbe\x1f\x08m" +
+	"V<\xc32w\x16\x0b\x15\x1b\xd9&\xd3e\xf6N]" +
+	"2\x18'\xc3\xdc\xca\xc8\x0e\xc7B\xa3\x94\xb3\xad=c" +
+	"0\xaf\xbc\xbed]\xa2\x9f\xa0\x9b\xb6\\\xabn\xeb\xe5" +
+	"Pby6\xf1R\x97(,\xea\x1a\xac-\xa7\xdb\x8a" +
+	"^v\xb4\xa4\x14\x03\x88!\x00\xdd\xd0\x07\xa0e%\xd4" +
+	"\xb6\x10\xa4\x88M|\x8f\xe8\xa6\x0e\x00m\xbd\x84Z\x8e" +
+	" %\xa4\x89;\x97n\xed\x07\xd06J\xa8=H0" +
+	"S\xdc\xb9M/3L\x02\xc1$`\xda(\x0e\xdb\xe2" +
+	"a_Aw\xd9\xa8>&\x9e\xab\x14\xa5Y\xfe\xec\xba" +
+	"\xe1\xab\xb6L\xae\xb6\x17iv\xef|\xa4\x82\xfb\x7f\xa0" +
+	"\xf2\xccIWv\xbb\x8e\x16\xab\xb6\x98\xe2\xc4\x13\x12j" +
+	"M\x04\xf7\x95\x99\xe3\xe8\x05VGn\x0e\xfd\xc4\x84n" +
+	"\x0c\xa8\xde\xd6\xf2l\x06\xc2`\xc2_\x96Q\xe2\xb4u" +
+	"\xa9V\xf2\x8e\xb9$\x7f8T\x97\x12\x0c$\xd7\xf8\x9f" +
+	"9\x09\xb5G\x08\xa6G,\xdb\xc5\x04\x10L\x00z\xae" +
+	"\xe5\xea\xbb\xfb\xc7\\\x90\x98\x83\x0d@\xb0\x81\xf7\xb2\xab" +
+	"b\x96\xc4\x9f\x029\xaf\xfa\xfev\xb7\xe5\xf4t\x8d\xf6" +
+	"s\xaf\xf5\xa8]t}\xf7\xe8e\xac\x91\xb6'\x94\xb6" +
+	"\xd5/\x8f) \x98\xba9a\x83\xf1\x03D\x13w\x84" +
+	"\x89k;\xbf9\xc3\x0b;,x\xaf\xf2\x19\x7f\xca5" +
+	"M\xf6\x85\\2\x8e\x0fC\x1a\xbe\x05\x00\x91\xc2\x82\xee" +
+	"E\xd1\xe7\\\xb7M\x80Mspx\xe1\x88\x17 \x9a" +
+	"\xaf\x9f\x1e];\xf5\xd8\xa1\xc8\xb5-\xdeO(>?" +
+	"hsGpm\xfb\xc3\xcab\x9a\xd7\xac\xbdT\x16d" +
+	"Xns\x85+\x90\xa8*\xb0j\x08@[)\xa1v" +
+	"G\xc4\xb1\xdd6\x80\xb6FB\xed\x1e\x82\xde\xd0\x98\xcb" +
+	"\x9c\x1c\xb3A\xd9\xce\x0cl\x04\x82\x8d\x80\xdep\xc5\xd6" +
+	"\xdd\xa2eB\xeb6\xdd\xb4\"F\xad\xd7\xaa\xf6F\x08" +
+	"V\xcd\x81\xf9\xb6\xf8\x06\x0ei\xf8\xd54k\x0c\xf3\xd8" +
+	"=\xcfZ\xeb\xc6\x1b\xf5\xb0\x8fB\x1a~\xb9\x05i\xff" +
+	"\x0d\x00\x00\xff\xffC\x9e\xef\xf6"
 
 func RegisterSchema(reg *schemas.Registry) {
 	reg.Register(&schemas.Schema{
@@ -1867,12 +2294,16 @@ func RegisterSchema(reg *schemas.Registry) {
 			0xac55a0efb669f5af,
 			0xba2d83d3bac29188,
 			0xc21543481a853078,
+			0xce4b1363ebaaea03,
+			0xd02dccb90bb2ab63,
 			0xd24f141e29f56191,
 			0xd323469991789ac3,
+			0xd814659ac0b8ea38,
 			0xd8320c178a73a4db,
 			0xd8528fc126c10ff9,
 			0xe328afbb2bb947e4,
 			0xed83e41c1767406f,
+			0xf14ced2f372e0c33,
 			0xf2d726cbb665a8f2,
 			0xf66219dcd10bae83,
 		},

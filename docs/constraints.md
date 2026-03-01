@@ -12,9 +12,8 @@
 
 ## Networking Model
 
-- Swift manager can attach `VZNATNetworkDeviceAttachment` for guest egress.
-- Host-side NAT gateway behavior is managed by macOS vmnet/Virtualization; explicit host bridge/gateway IP control is limited.
-- Guest-side interface setup is performed in-agent via kernel APIs (netlink), not `ip` shell commands.
+- Current `run-go` path is vsock-first.
+- Networking behavior depends on selected Virtualization attachment mode and entitlements.
 
 ## Build Environment
 

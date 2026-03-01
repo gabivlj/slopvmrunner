@@ -19,6 +19,7 @@ make run-go
 
 `run-go` is the recommended product entrypoint.
 `vmmanager` remains available and is used as the backend VM component.
+By default, `run-go` is vsock-first.
 
 Run Swift manager directly:
 
@@ -37,6 +38,7 @@ make run-efi
 - `VERBOSE=1`: verbose build script output.
 - `KERNEL_MODE=source|package|auto`: kernel build mode.
 - `AGENT_VSOCK_PORT=7000`: vsock port used by agent/manager.
+- `TEST=Regex`: optional `go test -run` filter used by `make test`.
 - `MEMORY_MIB=512`, `CPUS=2`: VM resources.
 
 Example:

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,21 +20,74 @@ import (
 	vmapi "github.com/gabrielvillalongasimon/vmrunner/api/gen/go/capnp"
 )
 
+type BootMode string
+
 const (
-	BootModeLinux = "linux"
-	BootModeEFI   = "efi"
+	BootModeLinux BootMode = "linux"
+	BootModeEFI   BootMode = "efi"
 )
 
+func (m BootMode) String() string {
+	return string(m)
+}
+
+func (m BootMode) IsValid() bool {
+	return m == BootModeLinux || m == BootModeEFI
+}
+
+func ParseBootMode(raw string) (BootMode, error) {
+	switch BootMode(strings.ToLower(strings.TrimSpace(raw))) {
+	case BootModeLinux:
+		return BootModeLinux, nil
+	case BootModeEFI:
+		return BootModeEFI, nil
+	default:
+		return "", fmt.Errorf("invalid boot mode %q (expected %q or %q)", raw, BootModeLinux, BootModeEFI)
+	}
+}
+
+type NetworkMode string
+
+const (
+	NetworkModeNAT      NetworkMode = "nat"
+	NetworkModeBridged  NetworkMode = "bridged"
+	NetworkModeHostOnly NetworkMode = "hostonly"
+)
+
+func (m NetworkMode) String() string {
+	return string(m)
+}
+
+func (m NetworkMode) IsValid() bool {
+	return m == NetworkModeNAT || m == NetworkModeBridged || m == NetworkModeHostOnly
+}
+
+func ParseNetworkMode(raw string) (NetworkMode, error) {
+	switch NetworkMode(strings.ToLower(strings.TrimSpace(raw))) {
+	case NetworkModeNAT:
+		return NetworkModeNAT, nil
+	case NetworkModeBridged:
+		return NetworkModeBridged, nil
+	case NetworkModeHostOnly:
+		return NetworkModeHostOnly, nil
+	default:
+		return "", fmt.Errorf("invalid network mode %q (expected %q, %q, or %q)", raw, NetworkModeNAT, NetworkModeBridged, NetworkModeHostOnly)
+	}
+}
+
 type VMConfig struct {
-	BootMode             string
+	BootMode             BootMode
 	KernelPath           string
 	InitrdPath           string
 	RootImage            string
 	MemoryMiB            int
 	CPUs                 int
 	AgentVsockPort       int
+	ProxyVsockPorts      []int
 	AgentReadySocketPath string
 	EnableNetwork        bool
+	NetworkMode          NetworkMode
+	BridgeInterface      string
 	VMNetworkCIDR        string
 	VMNetworkGateway     string
 	VMNetworkIfName      string
@@ -44,9 +98,7 @@ func (c VMConfig) Validate() error {
 	if c.RootImage == "" {
 		return errors.New("root image is required")
 	}
-	switch c.BootMode {
-	case "", BootModeLinux, BootModeEFI:
-	default:
+	if c.BootMode != "" && !c.BootMode.IsValid() {
 		return fmt.Errorf("invalid boot mode %q (expected %q or %q)", c.BootMode, BootModeLinux, BootModeEFI)
 	}
 	if c.BootMode == BootModeLinux && c.KernelPath == "" {
@@ -61,10 +113,18 @@ func (c VMConfig) Validate() error {
 	if c.AgentVsockPort <= 0 {
 		return errors.New("agent vsock port must be > 0")
 	}
+	for _, p := range c.ProxyVsockPorts {
+		if p <= 0 {
+			return fmt.Errorf("proxy vsock port must be > 0: %d", p)
+		}
+	}
 	if c.AgentReadySocketPath == "" {
 		return errors.New("agent readiness unix socket path is required")
 	}
 	if c.EnableNetwork {
+		if c.NetworkMode != "" && !c.NetworkMode.IsValid() {
+			return fmt.Errorf("invalid network mode %q (expected %q, %q, or %q)", c.NetworkMode, NetworkModeNAT, NetworkModeBridged, NetworkModeHostOnly)
+		}
 		if c.VMNetworkCIDR != "" {
 			if _, err := netip.ParsePrefix(c.VMNetworkCIDR); err != nil {
 				return fmt.Errorf("invalid vm network cidr %q: %w", c.VMNetworkCIDR, err)
@@ -89,15 +149,25 @@ func (c VMConfig) ManagerArgs() ([]string, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
+	if c.NetworkMode == "" {
+		c.NetworkMode = NetworkModeHostOnly
+	}
 
 	args := []string{
-		"--boot-mode", c.BootMode,
+		"--boot-mode", c.BootMode.String(),
 		"--root-image", c.RootImage,
 		"--memory-mib", strconv.Itoa(c.MemoryMiB),
 		"--cpus", strconv.Itoa(c.CPUs),
 		"--agent-vsock-port", strconv.Itoa(c.AgentVsockPort),
 		"--agent-ready-socket", c.AgentReadySocketPath,
 		"--enable-network", strconv.FormatBool(c.EnableNetwork),
+		"--network-mode", c.NetworkMode.String(),
+	}
+	for _, port := range c.ProxyVsockPorts {
+		args = append(args, "--proxy-vsock-port", strconv.Itoa(port))
+	}
+	if c.BridgeInterface != "" {
+		args = append(args, "--bridge-interface", c.BridgeInterface)
 	}
 	if c.VMNetworkCIDR != "" {
 		args = append(args, "--vm-network-cidr", c.VMNetworkCIDR)
@@ -133,8 +203,14 @@ type VMContext struct {
 	agent     vmapi.Agent
 	rpcConn   *rpc.Conn
 	agentRWC  *os.File
+	proxyCh   chan ProxyConn
 	logger    *slog.Logger
 	closeOnce sync.Once
+}
+
+type ProxyConn struct {
+	Port uint32
+	File *os.File
 }
 
 func NewVMRunner(logger *slog.Logger) *VMRunner {
@@ -157,6 +233,10 @@ func (v *VMContext) Kill() error {
 
 func (v *VMContext) Agent() vmapi.Agent {
 	return v.agent.AddRef()
+}
+
+func (v *VMContext) ProxyConnCh() <-chan ProxyConn {
+	return v.proxyCh
 }
 
 func (v *VMContext) Close() {
@@ -215,36 +295,57 @@ func (r *VMRunner) Run(ctx context.Context, cfg VMConfig) (*VMContext, error) {
 
 	readyCh := make(chan time.Duration, 1)
 	readyErrCh := make(chan error, 1)
-	agentRWCCh := make(chan *os.File, 1)
+	acceptCh := make(chan ProxyConn, 32)
+	acceptDone := make(chan struct{})
 	go func() {
-		conn, err := readyListener.Accept()
+		defer close(acceptCh)
+		defer close(acceptDone)
+		for {
+			conn, err := readyListener.Accept()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					return
+				}
+				select {
+				case readyErrCh <- err:
+				default:
+				}
+				return
+			}
 
-		if err != nil {
-			readyErrCh <- err
-			return
-		}
-		defer conn.Close()
+			unixConn, ok := conn.(*net.UnixConn)
+			if !ok {
+				_ = conn.Close()
+				select {
+				case readyErrCh <- fmt.Errorf("unexpected readiness connection type %T", conn):
+				default:
+				}
+				return
+			}
 
-		unixConn, ok := conn.(*net.UnixConn)
-		if !ok {
-			readyErrCh <- fmt.Errorf("unexpected readiness connection type %T", conn)
-			return
+			fd, port, err := recvFD(unixConn)
+			_ = conn.Close()
+			if err != nil {
+				select {
+				case readyErrCh <- fmt.Errorf("recv fd: %w", err):
+				default:
+				}
+				return
+			}
+			file := os.NewFile(uintptr(fd), fmt.Sprintf("vsock-%d", port))
+			if file == nil {
+				_ = syscall.Close(fd)
+				select {
+				case readyErrCh <- errors.New("failed to wrap received fd"):
+				default:
+				}
+				return
+			}
+			acceptCh <- ProxyConn{
+				Port: port,
+				File: file,
+			}
 		}
-
-		fd, err := recvFD(unixConn)
-		if err != nil {
-			readyErrCh <- fmt.Errorf("recv fd: %w", err)
-			return
-		}
-
-		file := os.NewFile(uintptr(fd), "agent-vsock")
-		if file == nil {
-			_ = syscall.Close(fd)
-			readyErrCh <- errors.New("failed to wrap received fd")
-			return
-		}
-		agentRWCCh <- file
-		readyCh <- time.Since(startAt)
 	}()
 
 	procWaitCh := make(chan error, 1)
@@ -252,33 +353,44 @@ func (r *VMRunner) Run(ctx context.Context, cfg VMConfig) (*VMContext, error) {
 
 	ready := false
 	var agentRWC *os.File
+	pendingProxyConns := make([]ProxyConn, 0, 8)
+	agentPort := uint32(cfg.AgentVsockPort)
 	for !ready {
 		select {
-		case f := <-agentRWCCh:
-			agentRWC = f
+		case accepted, ok := <-acceptCh:
+			if !ok {
+				return nil, errors.New("readiness channel closed before agent connection")
+			}
+			if accepted.Port == agentPort && agentRWC == nil {
+				agentRWC = accepted.File
+				readyCh <- time.Since(startAt)
+				continue
+			}
+			pendingProxyConns = append(pendingProxyConns, accepted)
 		case d := <-readyCh:
-			r.Logger.Info("agent readiness via vsock", "latency", d.Round(time.Millisecond).String())
-			ready = true
+			r.Logger.Info("agent readiness via vsock", "latency", d.Round(time.Millisecond).String(), "port", agentPort)
+			ready = agentRWC != nil
 		case err := <-readyErrCh:
 			_ = cmd.Process.Kill()
 			<-procWaitCh
 			_ = readyListener.Close()
+			<-acceptDone
 			_ = os.Remove(cfg.AgentReadySocketPath)
 			return nil, fmt.Errorf("readiness unix socket accept failed: %w", err)
 		case err := <-procWaitCh:
 			_ = readyListener.Close()
+			<-acceptDone
 			_ = os.Remove(cfg.AgentReadySocketPath)
 			return nil, fmt.Errorf("vm manager exited before agent readiness: %w", err)
 		case <-ctx.Done():
 			_ = cmd.Process.Kill()
 			<-procWaitCh
 			_ = readyListener.Close()
+			<-acceptDone
 			_ = os.Remove(cfg.AgentReadySocketPath)
 			return nil, ctx.Err()
 		}
 	}
-	_ = readyListener.Close()
-	_ = os.Remove(cfg.AgentReadySocketPath)
 
 	rpcConn := rpc.NewConn(rpc.NewStreamTransport(agentRWC), nil)
 	agent := vmapi.Agent(rpcConn.Bootstrap(ctx))
@@ -287,6 +399,9 @@ func (r *VMRunner) Run(ctx context.Context, cfg VMConfig) (*VMContext, error) {
 		_ = agentRWC.Close()
 		_ = cmd.Process.Kill()
 		<-procWaitCh
+		_ = readyListener.Close()
+		<-acceptDone
+		_ = os.Remove(cfg.AgentReadySocketPath)
 		return nil, errors.New("received invalid agent capability")
 	}
 
@@ -304,11 +419,24 @@ func (r *VMRunner) Run(ctx context.Context, cfg VMConfig) (*VMContext, error) {
 		agent:    agent,
 		rpcConn:  rpcConn,
 		agentRWC: agentRWC,
+		proxyCh:  make(chan ProxyConn, 64),
 		logger:   r.Logger,
 	}
+	for _, accepted := range pendingProxyConns {
+		vmCtx.proxyCh <- accepted
+	}
+	go func() {
+		for accepted := range acceptCh {
+			vmCtx.proxyCh <- accepted
+		}
+		close(vmCtx.proxyCh)
+	}()
 
 	go func() {
 		err := <-procWaitCh
+		_ = readyListener.Close()
+		<-acceptDone
+		_ = os.Remove(cfg.AgentReadySocketPath)
 		if err != nil {
 			r.Logger.Error("vm manager exited", "error", err)
 		} else {
@@ -322,16 +450,20 @@ func (r *VMRunner) Run(ctx context.Context, cfg VMConfig) (*VMContext, error) {
 	return vmCtx, nil
 }
 
-func recvFD(conn *net.UnixConn) (int, error) {
-	data := make([]byte, 1)
+func recvFD(conn *net.UnixConn) (int, uint32, error) {
+	data := make([]byte, 4)
 	oob := make([]byte, 128)
-	_, oobn, _, _, err := conn.ReadMsgUnix(data, oob)
+	n, oobn, _, _, err := conn.ReadMsgUnix(data, oob)
 	if err != nil {
-		return -1, err
+		return -1, 0, err
 	}
+	if n < 4 {
+		return -1, 0, fmt.Errorf("readiness payload too short: %d", n)
+	}
+	port := uint32(data[0]) | uint32(data[1])<<8 | uint32(data[2])<<16 | uint32(data[3])<<24
 	msgs, err := syscall.ParseSocketControlMessage(oob[:oobn])
 	if err != nil {
-		return -1, err
+		return -1, 0, err
 	}
 	for _, m := range msgs {
 		fds, err := syscall.ParseUnixRights(&m)
@@ -339,8 +471,8 @@ func recvFD(conn *net.UnixConn) (int, error) {
 			continue
 		}
 		if len(fds) > 0 {
-			return fds[0], nil
+			return fds[0], port, nil
 		}
 	}
-	return -1, errors.New("no fd in unix rights message")
+	return -1, port, errors.New("no fd in unix rights message")
 }

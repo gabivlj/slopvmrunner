@@ -7,6 +7,12 @@ enum BootMode: String {
     case efi
 }
 
+enum NetworkMode: String {
+    case nat
+    case bridged
+    case hostonly
+}
+
 struct ManagerConfig {
     let bootMode: BootMode
     let kernelPath: String?
@@ -15,8 +21,11 @@ struct ManagerConfig {
     let memoryMiB: UInt64
     let cpuCount: Int
     let agentVsockPort: Int
+    let proxyVsockPorts: [Int]
     let agentReadySocketPath: String?
     let enableNetwork: Bool
+    let networkMode: NetworkMode
+    let bridgeInterface: String?
     let vmNetworkCIDR: String?
     let vmNetworkGateway: String?
     let vmNetworkIfName: String?
@@ -54,8 +63,8 @@ final class VMRuntime {
     let verbose: Bool
     private var stateLogTimer: DispatchSourceTimer?
     private var lastState: String?
-    private var vsockListener: VZVirtioSocketListener?
-    private var vsockDelegate: AgentVsockListenerDelegate?
+    private var vsockListeners: [UInt32: VZVirtioSocketListener] = [:]
+    private var vsockDelegates: [UInt32: AgentVsockListenerDelegate] = [:]
 
     init(vm: VZVirtualMachine, config: ManagerConfig, verbose: Bool) {
         self.vm = vm
@@ -85,21 +94,31 @@ final class VMRuntime {
             return
         }
 
-        let listener = VZVirtioSocketListener()
-        let delegate = AgentVsockListenerDelegate(
-            readySocketPath: config.agentReadySocketPath,
-            verbose: verbose
-        )
-        listener.delegate = delegate
-        socketDevice.setSocketListener(listener, forPort: UInt32(config.agentVsockPort))
-        vsockListener = listener
-        vsockDelegate = delegate
-
-        if verbose {
-            fputs("[vmmanager] vsock listening on host port \(config.agentVsockPort)\n", stderr)
-            if let readyPath = config.agentReadySocketPath {
-                fputs("[vmmanager] unix readiness notify path=\(readyPath)\n", stderr)
+        var listenPorts = [UInt32(config.agentVsockPort)]
+        for p in config.proxyVsockPorts where p > 0 {
+            let u = UInt32(p)
+            if !listenPorts.contains(u) {
+                listenPorts.append(u)
             }
+        }
+
+        for port in listenPorts {
+            let listener = VZVirtioSocketListener()
+            let delegate = AgentVsockListenerDelegate(
+                readySocketPath: config.agentReadySocketPath,
+                verbose: verbose
+            )
+            listener.delegate = delegate
+            socketDevice.setSocketListener(listener, forPort: port)
+            vsockListeners[port] = listener
+            vsockDelegates[port] = delegate
+
+            if verbose {
+                fputs("[vmmanager] vsock listening on host port \(port)\n", stderr)
+            }
+        }
+        if verbose, let readyPath = config.agentReadySocketPath {
+            fputs("[vmmanager] unix readiness notify path=\(readyPath)\n", stderr)
         }
     }
 }
@@ -107,7 +126,6 @@ final class VMRuntime {
 final class AgentVsockListenerDelegate: NSObject, VZVirtioSocketListenerDelegate {
     private let readySocketPath: String?
     private let verbose: Bool
-    private var readyNotified = false
     private var connections: [VZVirtioSocketConnection] = []
     private let lock = NSLock()
 
@@ -133,10 +151,7 @@ final class AgentVsockListenerDelegate: NSObject, VZVirtioSocketListenerDelegate
             )
         }
 
-        if !readyNotified {
-            readyNotified = true
-            sendConnectionFDOverUnixSocket(connection.fileDescriptor)
-        }
+        sendConnectionFDOverUnixSocket(connection.fileDescriptor, destinationPort: connection.destinationPort)
 
         if verbose {
             fputs(
@@ -148,7 +163,7 @@ final class AgentVsockListenerDelegate: NSObject, VZVirtioSocketListenerDelegate
         return true
     }
 
-    private func sendConnectionFDOverUnixSocket(_ fdToSend: Int32) {
+    private func sendConnectionFDOverUnixSocket(_ fdToSend: Int32, destinationPort: UInt32) {
         guard let path = readySocketPath else { return }
         if path.utf8.count >= 104 {
             fputs("warning: unix socket path too long: \(path)\n", stderr)
@@ -199,10 +214,13 @@ final class AgentVsockListenerDelegate: NSObject, VZVirtioSocketListenerDelegate
             }
         }
 
-        var payload: UInt8 = 0x1
+        var payload = destinationPort.littleEndian
         var control = FDControlMessage(fd: fdToSend)
         let sendResult: Int = withUnsafeMutablePointer(to: &payload) { payloadPtr in
-            var iov = iovec(iov_base: UnsafeMutableRawPointer(payloadPtr), iov_len: 1)
+            var iov = iovec(
+                iov_base: UnsafeMutableRawPointer(payloadPtr),
+                iov_len: MemoryLayout<UInt32>.size
+            )
             return withUnsafeMutablePointer(to: &control) { controlPtr in
                 var msg = msghdr()
                 msg.msg_iov = withUnsafeMutablePointer(to: &iov) { $0 }
@@ -219,7 +237,7 @@ final class AgentVsockListenerDelegate: NSObject, VZVirtioSocketListenerDelegate
         }
 
         if verbose {
-            fputs("[vmmanager] delivered vsock fd \(fdToSend) over unix socket\n", stderr)
+            fputs("[vmmanager] delivered vsock fd \(fdToSend) port=\(destinationPort) over unix socket\n", stderr)
         }
     }
 }
@@ -247,8 +265,11 @@ struct VMManagerCLI {
         var memoryMiB: UInt64 = 512
         var cpuCount = 2
         var agentVsockPort = 7000
+        var proxyVsockPorts: [Int] = []
         var agentReadySocketPath: String?
         var enableNetwork = true
+        var networkMode: NetworkMode = .nat
+        var bridgeInterface: String?
         var vmNetworkCIDR: String?
         var vmNetworkGateway: String?
         var vmNetworkIfName: String?
@@ -277,6 +298,13 @@ struct VMManagerCLI {
                 i += 1; cpuCount = Int(value(at: i, for: arg)) ?? cpuCount
             case "--agent-vsock-port":
                 i += 1; agentVsockPort = Int(value(at: i, for: arg)) ?? agentVsockPort
+            case "--proxy-vsock-port":
+                i += 1
+                let raw = value(at: i, for: arg)
+                guard let port = Int(raw), port > 0 else {
+                    throw CLIError.invalidArg("--proxy-vsock-port must be a positive integer")
+                }
+                proxyVsockPorts.append(port)
             case "--agent-ready-socket":
                 i += 1; agentReadySocketPath = value(at: i, for: arg)
             case "--enable-network":
@@ -290,6 +318,15 @@ struct VMManagerCLI {
                 default:
                     throw CLIError.invalidArg("--enable-network must be true/false")
                 }
+            case "--network-mode":
+                i += 1
+                let raw = value(at: i, for: arg)
+                guard let mode = NetworkMode(rawValue: raw) else {
+                    throw CLIError.invalidArg("--network-mode must be one of: nat, bridged, hostonly")
+                }
+                networkMode = mode
+            case "--bridge-interface":
+                i += 1; bridgeInterface = value(at: i, for: arg)
             case "--vm-network-cidr":
                 i += 1; vmNetworkCIDR = value(at: i, for: arg)
             case "--vm-network-gateway":
@@ -322,8 +359,11 @@ struct VMManagerCLI {
             memoryMiB: memoryMiB,
             cpuCount: cpuCount,
             agentVsockPort: agentVsockPort,
+            proxyVsockPorts: proxyVsockPorts,
             agentReadySocketPath: agentReadySocketPath,
             enableNetwork: enableNetwork,
+            networkMode: networkMode,
+            bridgeInterface: bridgeInterface,
             vmNetworkCIDR: vmNetworkCIDR,
             vmNetworkGateway: vmNetworkGateway,
             vmNetworkIfName: vmNetworkIfName,
@@ -352,8 +392,11 @@ Options:
   --memory-mib <int>      Default 512
   --cpus <int>            Default 2
   --agent-vsock-port <int>  Default 7000
+  --proxy-vsock-port <int> Repeatable extra host vsock ports that forward accepted fds to Go
   --agent-ready-socket <path> Optional unix socket path for readiness notify
   --enable-network <bool>   Default true
+  --network-mode <nat|bridged|hostonly> Default nat
+  --bridge-interface <ifname> Optional host interface for bridged/hostonly mode
   --vm-network-cidr <cidr>  Optional CIDR passed to guest cmdline
   --vm-network-gateway <ip> Optional gateway passed to guest cmdline
   --vm-network-ifname <name> Optional ifname passed to guest cmdline
@@ -410,7 +453,23 @@ Options:
         vmConfig.entropyDevices = [entropy]
 
         if config.enableNetwork {
-            let netAttachment = VZNATNetworkDeviceAttachment()
+            let netAttachment: VZNetworkDeviceAttachment
+            switch config.networkMode {
+            case .nat:
+                netAttachment = VZNATNetworkDeviceAttachment()
+            case .bridged:
+                let bridgedInterface = try pickBridgedInterface(requested: config.bridgeInterface)
+                netAttachment = VZBridgedNetworkDeviceAttachment(interface: bridgedInterface)
+                if config.verbose {
+                    fputs("[vmmanager] bridged interface=\(bridgedInterface.identifier) (\(bridgedInterface.localizedDisplayName))\n", stderr)
+                }
+            case .hostonly:
+                let bridgedInterface = try pickBridgedInterface(requested: config.bridgeInterface)
+                netAttachment = VZBridgedNetworkDeviceAttachment(interface: bridgedInterface)
+                if config.verbose {
+                    fputs("[vmmanager] hostonly interface=\(bridgedInterface.identifier) (\(bridgedInterface.localizedDisplayName))\n", stderr)
+                }
+            }
             let netDevice = VZVirtioNetworkDeviceConfiguration()
             netDevice.attachment = netAttachment
             vmConfig.networkDevices = [netDevice]
@@ -426,7 +485,7 @@ Options:
         let vm = VZVirtualMachine(configuration: vmConfig)
         if config.verbose {
             let kernelDesc = config.kernelPath ?? "<none>"
-            fputs("[vmmanager] bootMode=\(config.bootMode.rawValue) kernel=\(kernelDesc) rootImage=\(config.rootImagePath) memMiB=\(config.memoryMiB) cpus=\(config.cpuCount) agentVsockPort=\(config.agentVsockPort) enableNetwork=\(config.enableNetwork)\n", stderr)
+            fputs("[vmmanager] bootMode=\(config.bootMode.rawValue) kernel=\(kernelDesc) rootImage=\(config.rootImagePath) memMiB=\(config.memoryMiB) cpus=\(config.cpuCount) agentVsockPort=\(config.agentVsockPort) enableNetwork=\(config.enableNetwork) networkMode=\(config.networkMode.rawValue)\n", stderr)
             fputs("[vmmanager] kernelCmdline=\(config.bootArgs)\n", stderr)
             fputs("[vmmanager] serial console attached to stdio\n", stderr)
         }
@@ -473,6 +532,22 @@ Options:
         var machine = [CChar](repeating: 0, count: size)
         sysctlbyname("hw.machine", &machine, &size, nil, 0)
         return String(cString: machine)
+    }
+
+    static func pickBridgedInterface(requested: String?) throws -> VZBridgedNetworkInterface {
+        let interfaces = VZBridgedNetworkInterface.networkInterfaces
+        guard !interfaces.isEmpty else {
+            throw CLIError.invalidArg("no bridged network interfaces available on host")
+        }
+
+        if let requested, !requested.isEmpty {
+            if let match = interfaces.first(where: { $0.identifier == requested || $0.localizedDisplayName == requested }) {
+                return match
+            }
+            throw CLIError.invalidArg("bridge interface not found: \(requested)")
+        }
+
+        return interfaces[0]
     }
 }
 
