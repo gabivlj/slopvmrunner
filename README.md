@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > **Attention:** this is complete slop; just having fun over the weekend with Codex.
-> Use at your own risk. This was means to explore Apple's virtualization network and try to see how fast we can start a Linux VM.
+> Use at your own risk. This was meant to explore Apple's virtualization networking, see how fast we can start a Linux VM, and see how far I can get with mostly AI-generated codeslop.
 
 Self-contained container runner for macOS, exposed through a Go entrypoint and backed by Linux microVMs.
 
