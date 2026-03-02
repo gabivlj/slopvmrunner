@@ -9,15 +9,22 @@ MEMORY_MIB ?= 512
 CPUS ?= 2
 IMAGE ?= docker.io/library/ubuntu:latest
 
-ROOT_IMAGE ?= build/rootfs.raw
-KERNEL ?= build/kernel
+STATE_HOME ?= $(HOME)/.slopvmrunner
+STATE_WORK ?= $(CURDIR)/.slopvmrunner
+VM_NAME ?= devvm
+ROOT_IMAGE ?= $(STATE_HOME)/rootfs/default.raw
+KERNEL ?= $(STATE_HOME)/kernels/default
+KERNEL_PREBUILT_DIR ?=
+KERNEL_PREBUILT_FILE ?=
+VM_BIN ?= $(STATE_HOME)/bin/vm
+VMMANAGER_BIN ?= $(STATE_HOME)/bin/vmmanager
 AGENT_GO_SOURCES := $(shell find agent -type f -name '*.go')
 VM_GO_SOURCES := $(shell find vm -type f -name '*.go')
 API_CAPNP_SOURCES := $(shell find api/capnp -type f -name '*.capnp')
 API_GO_GENERATED := $(shell find api/gen/go -type f -name '*.go' 2>/dev/null)
 VMMANAGER_SIGNING_ENV := $(wildcard manager/.env.local)
-GO_CACHE_DIR := $(abspath build/.gocache)
-GO_PATH_DIR := $(abspath build/.gopath)
+GO_CACHE_DIR := $(abspath $(STATE_HOME)/.gocache)
+GO_PATH_DIR := $(abspath $(STATE_HOME)/.gopath)
 GO_BUILD_ENV := GOCACHE=$(GO_CACHE_DIR) GOPATH=$(GO_PATH_DIR)
 GO_MIN_VERSION := go1.26.0
 TEST ?=
@@ -29,7 +36,7 @@ help:
 	@echo "Targets:"
 	@echo "  make image              Build agent + rootfs + kernel + raw image"
 	@echo "  make api                Generate Go bindings from api/capnp/*.capnp"
-	@echo "  make vm-binaries        Build vm + vmmanager binaries into build/"
+	@echo "  make vm-binaries        Build vm + vmmanager binaries into ~/.slopvmrunner/bin/"
 	@echo "  make kernel             Build/refresh kernel artifact"
 	@echo "  make rootfs             Build/refresh rootfs tree"
 	@echo "  make raw                Build/refresh rootfs.raw"
@@ -48,6 +55,11 @@ help:
 	@echo "  IMAGE=docker.io/library/ubuntu:latest  Container image used by run-container"
 	@echo "  TEST=Regex             Optional go test -run filter for make test"
 	@echo "  MEMORY_MIB=512 CPUS=2   VM resources"
+	@echo "  STATE_HOME=$(STATE_HOME)  Global install artifacts"
+	@echo "  STATE_WORK=$(STATE_WORK)  Per-workdir VM state root"
+	@echo "  VM_NAME=$(VM_NAME)        VM state name under STATE_WORK/vms"
+	@echo "  KERNEL_PREBUILT_DIR=<dir> Import prebuilt kernel from a directory (skips kernel build)"
+	@echo "  KERNEL_PREBUILT_FILE=<file> Exact file inside KERNEL_PREBUILT_DIR to copy (optional)"
 
 check-go:
 	@v="$$(go env GOVERSION 2>/dev/null || true)"; \
@@ -60,61 +72,85 @@ check-go:
 		exit 1; \
 	fi
 
-build/.api-go.stamp: api/scripts/gen-go.sh api/go.mod api/go.sum $(API_CAPNP_SOURCES)
-	@mkdir -p build
+$(STATE_HOME)/.api-go.stamp: api/scripts/gen-go.sh api/go.mod api/go.sum $(API_CAPNP_SOURCES)
+	@mkdir -p $(STATE_HOME)
 	cd api && $(GO_BUILD_ENV) ./scripts/gen-go.sh
 	@touch $@
 
-api: check-go build/.api-go.stamp
+api: check-go $(STATE_HOME)/.api-go.stamp
 
-build/agent: check-go image/scripts/build-agent.sh image/scripts/lib/arch.sh agent/go.mod $(AGENT_GO_SOURCES) api/scripts/gen-go.sh api/go.mod api/go.sum $(API_CAPNP_SOURCES)
-	@mkdir -p build
+$(STATE_HOME)/agent: check-go image/scripts/build-agent.sh image/scripts/lib/arch.sh agent/go.mod $(AGENT_GO_SOURCES) api/scripts/gen-go.sh api/go.mod api/go.sum $(API_CAPNP_SOURCES)
+	@mkdir -p $(STATE_HOME)
 	$(MAKE) api
-	VERBOSE=$(VERBOSE) ./image/scripts/build-agent.sh
+	BUILD_DIR=$(STATE_HOME) VERBOSE=$(VERBOSE) ./image/scripts/build-agent.sh
 
-agent: build/agent
+agent: $(STATE_HOME)/agent
 
-build/.rootfs.stamp: image/scripts/build-rootfs.sh image/scripts/lib/arch.sh image/rootfs-overlay/etc/hostname image/rootfs-overlay/etc/passwd image/rootfs-overlay/etc/group build/agent
-	VERBOSE=$(VERBOSE) ./image/scripts/build-rootfs.sh
+$(STATE_HOME)/.rootfs.stamp: image/scripts/build-rootfs.sh image/scripts/lib/arch.sh image/rootfs-overlay/etc/hostname image/rootfs-overlay/etc/passwd image/rootfs-overlay/etc/group $(STATE_HOME)/agent
+	BUILD_DIR=$(STATE_HOME) VERBOSE=$(VERBOSE) ./image/scripts/build-rootfs.sh
 	@touch $@
 
-rootfs: image/scripts/build-rootfs.sh image/scripts/lib/arch.sh image/rootfs-overlay/etc/hostname image/rootfs-overlay/etc/passwd image/rootfs-overlay/etc/group build/agent
-	VERBOSE=$(VERBOSE) ./image/scripts/build-rootfs.sh
-	@touch build/.rootfs.stamp
+rootfs: image/scripts/build-rootfs.sh image/scripts/lib/arch.sh image/rootfs-overlay/etc/hostname image/rootfs-overlay/etc/passwd image/rootfs-overlay/etc/group $(STATE_HOME)/agent
+	BUILD_DIR=$(STATE_HOME) VERBOSE=$(VERBOSE) ./image/scripts/build-rootfs.sh
+	@touch $(STATE_HOME)/.rootfs.stamp
 
-build/kernel: image/scripts/build-kernel.sh image/scripts/build-kernel-source.sh image/scripts/lib/arch.sh build/.rootfs.stamp
-	VERBOSE=$(VERBOSE) KERNEL_MODE=$(KERNEL_MODE) ./image/scripts/build-kernel.sh
+$(KERNEL): image/scripts/build-kernel.sh image/scripts/build-kernel-source.sh image/scripts/lib/arch.sh $(STATE_HOME)/.rootfs.stamp
+	@if [[ -n "$(KERNEL_PREBUILT_DIR)" ]]; then \
+		mkdir -p "$(dir $(KERNEL))"; \
+		if [[ -f "$(KERNEL_PREBUILT_DIR)" ]]; then \
+			src="$(KERNEL_PREBUILT_DIR)"; \
+		elif [[ -n "$(KERNEL_PREBUILT_FILE)" ]]; then \
+			src="$(KERNEL_PREBUILT_DIR)/$(KERNEL_PREBUILT_FILE)"; \
+			if [[ ! -f "$$src" ]]; then \
+				echo "missing prebuilt kernel file: $$src"; \
+				exit 1; \
+			fi; \
+		else \
+			src=""; \
+			for cand in kernel Image vmlinuz vmlinuz-virt; do \
+				if [[ -f "$(KERNEL_PREBUILT_DIR)/$$cand" ]]; then src="$(KERNEL_PREBUILT_DIR)/$$cand"; break; fi; \
+			done; \
+			if [[ -z "$$src" ]]; then \
+				echo "no kernel file found in $(KERNEL_PREBUILT_DIR); looked for: kernel, Image, vmlinuz, vmlinuz-virt"; \
+				exit 1; \
+			fi; \
+		fi; \
+		cp "$$src" "$(KERNEL)"; \
+		echo "imported prebuilt kernel: $$src -> $(KERNEL)"; \
+	else \
+		BUILD_DIR=$(STATE_HOME) VERBOSE=$(VERBOSE) KERNEL_MODE=$(KERNEL_MODE) ./image/scripts/build-kernel.sh; \
+	fi
 	@if [[ "$$(uname -m)" == "arm64" ]]; then \
-		file build/kernel | grep -q "Linux kernel ARM64 boot executable Image" || \
-		( echo "invalid kernel format for arm64:" && file build/kernel && exit 1 ); \
+		file $(KERNEL) | grep -q "Linux kernel ARM64 boot executable Image" || \
+		( echo "invalid kernel format for arm64:" && file $(KERNEL) && exit 1 ); \
 	fi
 
-kernel: build/kernel
+kernel: $(KERNEL)
 
-build/rootfs.raw: image/scripts/make-raw-image.sh build/.rootfs.stamp
-	VERBOSE=$(VERBOSE) ./image/scripts/make-raw-image.sh
+$(ROOT_IMAGE): image/scripts/make-raw-image.sh $(STATE_HOME)/.rootfs.stamp
+	BUILD_DIR=$(STATE_HOME) VERBOSE=$(VERBOSE) ./image/scripts/make-raw-image.sh "$(ROOT_IMAGE)"
 
-raw: build/rootfs.raw
+raw: $(ROOT_IMAGE)
 
-image: build/kernel build/rootfs.raw
+image: $(KERNEL) $(ROOT_IMAGE)
 
-build/vmmanager: manager/run-local.sh manager/Package.swift manager/Sources/vmmanager/main.swift manager/vmmanager.entitlements manager/vmmanager.networking.entitlements $(VMMANAGER_SIGNING_ENV)
-	@mkdir -p build
-	./manager/run-local.sh --out "$(abspath build/vmmanager)" --build-only
+$(VMMANAGER_BIN): manager/run-local.sh manager/Package.swift manager/Sources/vmmanager/main.swift manager/vmmanager.entitlements manager/vmmanager.networking.entitlements $(VMMANAGER_SIGNING_ENV)
+	@mkdir -p "$(dir $(VMMANAGER_BIN))"
+	./manager/run-local.sh --out "$(abspath $(VMMANAGER_BIN))" --build-only
 
-build/vm: check-go vm/go.mod $(VM_GO_SOURCES) build/.api-go.stamp $(API_GO_GENERATED) build/vmmanager
-	@mkdir -p build
-	cd vm && $(GO_BUILD_ENV) go build -o ../build/vm ./cmd/vm
+$(VM_BIN): check-go vm/go.mod $(VM_GO_SOURCES) $(STATE_HOME)/.api-go.stamp $(API_GO_GENERATED) $(VMMANAGER_BIN)
+	@mkdir -p "$(dir $(VM_BIN))"
+	cd vm && $(GO_BUILD_ENV) go build -o "$(VM_BIN)" ./cmd/vm
 
-vm-binaries: build/vmmanager build/vm
+vm-binaries: $(VMMANAGER_BIN) $(VM_BIN)
 
-test: check-go build/rootfs.raw require-kernel vm-binaries
+test: check-go $(ROOT_IMAGE) require-kernel vm-binaries
 	cd vm && $(GO_BUILD_ENV) go test -count=1 -v $(if $(TEST),-run '$(TEST)',) ./...
 
-check-kernel: build/kernel
+check-kernel: $(KERNEL)
 	@if [[ "$$(uname -m)" == "arm64" ]]; then \
-		file build/kernel | grep -q "Linux kernel ARM64 boot executable Image" || \
-		( echo "invalid kernel format for arm64:" && file build/kernel && exit 1 ); \
+		file $(KERNEL) | grep -q "Linux kernel ARM64 boot executable Image" || \
+		( echo "invalid kernel format for arm64:" && file $(KERNEL) && exit 1 ); \
 	fi
 
 require-kernel:
@@ -128,8 +164,8 @@ require-kernel:
 		( echo "invalid kernel format for arm64:" && file "$(KERNEL)" && echo "run: make kernel KERNEL_MODE=source" && exit 1 ); \
 	fi
 
-run: build/rootfs.raw require-kernel build/vmmanager
-	./build/vmmanager \
+run: $(ROOT_IMAGE) require-kernel $(VMMANAGER_BIN)
+	$(VMMANAGER_BIN) \
 		--boot-mode $(BOOT_MODE) \
 		--kernel $(KERNEL) \
 		--root-image $(ROOT_IMAGE) \
@@ -138,24 +174,30 @@ run: build/rootfs.raw require-kernel build/vmmanager
 		--cpus $(CPUS) \
 		$(VERBOSE_FLAG)
 
-run-go: build/rootfs.raw require-kernel build/vm
-	./build/vm \
+run-go: $(ROOT_IMAGE) require-kernel $(VM_BIN)
+	$(VM_BIN) \
 		--boot-mode $(BOOT_MODE) \
 		--kernel $(KERNEL) \
 		--root-image $(ROOT_IMAGE) \
 		--agent-vsock-port $(AGENT_VSOCK_PORT) \
-		--agent-ready-socket build/agent-ready.sock \
+		--home-state-root $(STATE_HOME) \
+		--work-state-root $(STATE_WORK) \
+		--vm-name $(VM_NAME) \
+		--vmmanager $(VMMANAGER_BIN) \
 		--memory-mib $(MEMORY_MIB) \
 		--cpus $(CPUS) \
 		$(VERBOSE_FLAG)
 
-run-container: build/rootfs.raw require-kernel build/vm
-	./build/vm \
+run-container: $(ROOT_IMAGE) require-kernel $(VM_BIN)
+	$(VM_BIN) \
 		--boot-mode $(BOOT_MODE) \
 		--kernel $(KERNEL) \
 		--root-image $(ROOT_IMAGE) \
 		--agent-vsock-port $(AGENT_VSOCK_PORT) \
-		--agent-ready-socket build/agent-ready.sock \
+		--home-state-root $(STATE_HOME) \
+		--work-state-root $(STATE_WORK) \
+		--vm-name $(VM_NAME) \
+		--vmmanager $(VMMANAGER_BIN) \
 		--enable-network=true \
 		--network-mode nat \
 		--memory-mib $(MEMORY_MIB) \
@@ -163,8 +205,8 @@ run-container: build/rootfs.raw require-kernel build/vm
 		--container-image $(IMAGE) \
 		$(VERBOSE_FLAG)
 
-run-efi: build/rootfs.raw build/vmmanager
-	./build/vmmanager \
+run-efi: $(ROOT_IMAGE) $(VMMANAGER_BIN)
+	$(VMMANAGER_BIN) \
 		--boot-mode efi \
 		--root-image $(ROOT_IMAGE) \
 		--memory-mib $(MEMORY_MIB) \
@@ -172,9 +214,10 @@ run-efi: build/rootfs.raw build/vmmanager
 		$(VERBOSE_FLAG)
 
 clean-kernel:
-	rm -f build/kernel build/vmlinuz build/vmlinuz-virt
-	rm -rf build/kernel-src
+	rm -f $(STATE_HOME)/kernels/default $(STATE_HOME)/vmlinuz $(STATE_HOME)/vmlinuz-virt
+	rm -rf $(STATE_HOME)/kernel-src
 
 clean:
-	rm -rf build
+	rm -rf $(STATE_HOME)
+	rm -rf $(STATE_WORK)
 	rm -rf manager/.build

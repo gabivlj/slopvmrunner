@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BUILD_DIR="$REPO_ROOT/build"
-ROOTFS_DIR="$BUILD_DIR/rootfs"
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/build}"
+ROOTFS_DIR="${ROOTFS_DIR:-$BUILD_DIR/rootfs-tree}"
 OVERLAY_DIR="$REPO_ROOT/image/rootfs-overlay"
 ALPINE_VERSION="${ALPINE_VERSION:-3.20.3}"
 RUNC_VERSION="${RUNC_VERSION:-1.2.6}"

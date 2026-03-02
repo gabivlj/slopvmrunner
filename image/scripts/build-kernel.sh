@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BUILD_DIR="$REPO_ROOT/build"
-ROOTFS_DIR="$BUILD_DIR/rootfs"
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/build}"
+ROOTFS_DIR="${ROOTFS_DIR:-$BUILD_DIR/rootfs-tree}"
 VERBOSE="${VERBOSE:-0}"
 
 if [[ "$VERBOSE" == "1" ]]; then
@@ -56,7 +56,7 @@ kernel_is_valid() {
 build_from_packages() {
   log "trying package kernel path (alpine linux-virt)"
   docker run --rm \
-    -v "$REPO_ROOT:/work" \
+    -v "$BUILD_DIR:/work/build" \
     -w /work \
     alpine:3.20 \
     sh -euc '
@@ -69,14 +69,14 @@ build_from_packages() {
       cp /boot/vmlinuz-virt /work/build/vmlinuz-virt
       cp /boot/vmlinuz-virt /work/build/kernel
 
-      rm -rf /work/build/rootfs/lib/modules
-      mkdir -p /work/build/rootfs/lib
-      cp -a /lib/modules /work/build/rootfs/lib/
+      rm -rf /work/build/rootfs-tree/lib/modules
+      mkdir -p /work/build/rootfs-tree/lib
+      cp -a /lib/modules /work/build/rootfs-tree/lib/
 
-      mkdir -p /work/build/rootfs/etc/apk
-      printf "%s\n%s\n" "$REPO_MAIN" "$REPO_COMMUNITY" > /work/build/rootfs/etc/apk/repositories
+      mkdir -p /work/build/rootfs-tree/etc/apk
+      printf "%s\n%s\n" "$REPO_MAIN" "$REPO_COMMUNITY" > /work/build/rootfs-tree/etc/apk/repositories
 
-      apk --root /work/build/rootfs --keys-dir /etc/apk/keys --repositories-file /work/build/rootfs/etc/apk/repositories \
+      apk --root /work/build/rootfs-tree --keys-dir /etc/apk/keys --repositories-file /work/build/rootfs-tree/etc/apk/repositories \
         add --no-cache --no-scripts nftables iproute2 ethtool e2fsprogs btrfs-progs xfsprogs
     '
 }

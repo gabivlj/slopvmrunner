@@ -9,7 +9,7 @@ Related docs:
 ## Components
 
 - `manager` (Swift): creates and runs `VZVirtualMachine`, configures storage, console, vsock, and optional NAT NIC.
-- `vm` (Go): primary entrypoint; builds runtime config, spawns `build/vmmanager`, receives vsock fd from Swift, and bootstraps Cap'n Proto RPC.
+- `vm` (Go): primary entrypoint; builds runtime config, spawns `~/.slopvmrunner/bin/vmmanager`, receives vsock fd from Swift, and bootstraps Cap'n Proto RPC.
 - `agent` (Go, guest): runs as `pid 1`, connects to host via vsock, serves Cap'n Proto capabilities.
   - `agent/cmd/agent/debug_service.go`: `Debug` service and byte stream benchmark methods.
   - `agent/cmd/agent/network_service.go`: `Network` service methods.
@@ -36,7 +36,7 @@ Additional internal/benchmark capabilities exist on `Agent` but are not part of 
 
 ## Product Surface
 
-- Supported entrypoint: Go (`build/vm`, `vm` package).
+- Supported entrypoint: Go (`~/.slopvmrunner/bin/vm`, `vm` package).
 - Swift manager is the backend VM component; the default user-facing entrypoint is Go.
 
 ## Boot Sequence (linux mode)

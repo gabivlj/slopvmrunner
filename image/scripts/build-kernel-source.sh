@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BUILD_DIR="$REPO_ROOT/build"
-ROOTFS_DIR="$BUILD_DIR/rootfs"
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/build}"
+ROOTFS_DIR="${ROOTFS_DIR:-$BUILD_DIR/rootfs-tree}"
 VERBOSE="${VERBOSE:-0}"
 
 if [[ "$VERBOSE" == "1" ]]; then
@@ -43,7 +43,7 @@ mkdir -p "$BUILD_DIR"
 log "building Linux $KERNEL_VERSION from source for arm64"
 log "using parallel jobs: $JOBS (override with KERNEL_JOBS)"
 docker run --rm \
-  -v "$REPO_ROOT:/work" \
+  -v "$BUILD_DIR:/work/build" \
   -w /work \
   debian:bookworm \
   bash -euc '
@@ -210,8 +210,8 @@ docker run --rm \
 
     cp arch/arm64/boot/Image /work/build/kernel
 
-    rm -rf /work/build/rootfs/lib/modules
-    if ! make -j"'"$JOBS"'" ARCH=arm64 V=1 modules_install INSTALL_MOD_PATH=/work/build/rootfs 2>&1 | tee -a /work/build/kernel-build.log; then
+    rm -rf /work/build/rootfs-tree/lib/modules
+    if ! make -j"'"$JOBS"'" ARCH=arm64 V=1 modules_install INSTALL_MOD_PATH=/work/build/rootfs-tree 2>&1 | tee -a /work/build/kernel-build.log; then
       echo "modules_install failed; showing last 200 log lines" >&2
       tail -n 200 /work/build/kernel-build.log >&2
       exit 1
@@ -224,17 +224,17 @@ ALPINE_BRANCH="v$(echo "$ALPINE_VERSION" | cut -d. -f1,2)"
 
 log "installing fs/network tools into rootfs"
 docker run --rm \
-  -v "$REPO_ROOT:/work" \
+  -v "$BUILD_DIR:/work/build" \
   -w /work \
   alpine:3.20 \
   sh -euc '
     REPO_MAIN="https://dl-cdn.alpinelinux.org/alpine/'"$ALPINE_BRANCH"'/main"
     REPO_COMMUNITY="https://dl-cdn.alpinelinux.org/alpine/'"$ALPINE_BRANCH"'/community"
 
-    mkdir -p /work/build/rootfs/etc/apk
-    printf "%s\n%s\n" "$REPO_MAIN" "$REPO_COMMUNITY" > /work/build/rootfs/etc/apk/repositories
+    mkdir -p /work/build/rootfs-tree/etc/apk
+    printf "%s\n%s\n" "$REPO_MAIN" "$REPO_COMMUNITY" > /work/build/rootfs-tree/etc/apk/repositories
 
-    apk --root /work/build/rootfs --keys-dir /etc/apk/keys --repositories-file /work/build/rootfs/etc/apk/repositories \
+    apk --root /work/build/rootfs-tree --keys-dir /etc/apk/keys --repositories-file /work/build/rootfs-tree/etc/apk/repositories \
       add --no-cache --no-scripts nftables iproute2 ethtool e2fsprogs btrfs-progs xfsprogs
   '
 

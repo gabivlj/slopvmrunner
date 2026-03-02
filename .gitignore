@@ -3,6 +3,7 @@
 *.swp
 *.swo
 
+.slopvmrunner
 # Project build artifacts
 /build/
 

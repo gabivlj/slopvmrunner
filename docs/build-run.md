@@ -3,11 +3,11 @@
 ## Main Targets
 
 - `make api`: generate Cap'n Proto Go bindings.
-- `make agent`: build guest agent binary into `build/agent`.
-- `make rootfs`: refresh rootfs tree in `build/rootfs`.
-- `make kernel`: build/refresh kernel artifact in `build/kernel`.
-- `make image`: build kernel + raw root image (`build/rootfs.raw`).
-- `make vm-binaries`: build `build/vmmanager` and `build/vm`.
+- `make agent`: build guest agent binary into `~/.slopvmrunner/agent`.
+- `make rootfs`: refresh rootfs tree in `~/.slopvmrunner/rootfs`.
+- `make kernel`: build/refresh kernel artifact in `~/.slopvmrunner/kernels/default`.
+- `make image`: build kernel + raw root image (`~/.slopvmrunner/rootfs/default.raw`).
+- `make vm-binaries`: build `~/.slopvmrunner/bin/vmmanager` and `~/.slopvmrunner/bin/vm`.
 - `make test`: run VM test suite (requires existing valid kernel artifact).
 
 ## Typical Flow
@@ -27,7 +27,7 @@ Container flow (current scaffold):
 make run-container IMAGE=docker.io/library/ubuntu:latest
 ```
 
-When `--container-image` is set and `--oci-spec` is omitted, the runner generates a default OCI spec (`build/oci-default.json`) and uses it through `ContainerService.create(...).start(...)`.
+When `--container-image` is set and `--oci-spec` is omitted, the runner generates a default OCI spec in the VM state directory and uses it through `ContainerService.create(...).start(...)`.
 Default mode uses virtiofs for image rootfs sharing plus an ext4 writable state disk for overlay upper/work.
 See [Mount Setup](mounts.md) for exact host/guest paths.
 
@@ -60,4 +60,5 @@ VERBOSE=1 KERNEL_MODE=source make image
 ## Notes
 
 - On Apple Silicon, linux boot mode requires an uncompressed ARM64 Linux `Image`.
-- `run-go` uses the Go wrapper in `vm/cmd/vm`, which launches the signed Swift `build/vmmanager` binary.
+- `run-go` uses the Go wrapper in `vm/cmd/vm`, which launches the signed Swift `~/.slopvmrunner/bin/vmmanager` binary.
+- Runtime VM state lives under `./.slopvmrunner/vms/<vmName>/` by default.

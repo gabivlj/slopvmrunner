@@ -12,8 +12,28 @@ if [[ -z "${CAPNPC_GO}" ]]; then
   exit 1
 fi
 
-CAPNP_MOD_DIR="$(cd "$API_DIR" && go list -f '{{.Dir}}' -m capnproto.org/go/capnp/v3)"
+CAPNP_MOD_DIR=""
+DOWNLOAD_JSON="$(cd "$API_DIR" && go mod download -json capnproto.org/go/capnp/v3 2>/dev/null || true)"
+if [[ -n "$DOWNLOAD_JSON" ]]; then
+  CAPNP_MOD_DIR="$(printf '%s\n' "$DOWNLOAD_JSON" | sed -n 's/^[[:space:]]*"Dir":[[:space:]]*"\(.*\)",$/\1/p' | head -n1)"
+fi
+
+if [[ -z "$CAPNP_MOD_DIR" || ! -d "$CAPNP_MOD_DIR" ]]; then
+  GOMODCACHE="$(cd "$API_DIR" && go env GOMODCACHE)"
+  for d in "$GOMODCACHE"/capnproto.org/go/capnp/v3@*; do
+    if [[ -d "$d/std" ]]; then
+      CAPNP_MOD_DIR="$d"
+      break
+    fi
+  done
+fi
+
 STD_DIR="$CAPNP_MOD_DIR/std"
+if [[ -z "$CAPNP_MOD_DIR" || ! -d "$STD_DIR" ]]; then
+  echo "failed to resolve capnp std includes (expected $STD_DIR)" >&2
+  echo "try: cd api && go mod download capnproto.org/go/capnp/v3" >&2
+  exit 1
+fi
 
 mkdir -p "$OUT_DIR"
 

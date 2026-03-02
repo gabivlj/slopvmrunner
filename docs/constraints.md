@@ -3,12 +3,12 @@
 ## macOS Virtualization
 
 - VM creation on macOS requires `com.apple.security.virtualization` entitlement.
-- `manager/run-local.sh` builds and signs `build/vmmanager` with the project entitlements file.
+- `manager/run-local.sh` builds and signs `~/.slopvmrunner/bin/vmmanager` with the project entitlements file.
 
 ## Kernel Artifact
 
 - Apple Silicon linux boot path expects an uncompressed ARM64 Linux `Image`.
-- `build/kernel` should be that artifact (validated by Make targets).
+- `~/.slopvmrunner/kernels/default` should be that artifact (validated by Make targets).
 
 ## Networking Model
 

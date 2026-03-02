@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -19,10 +18,12 @@ func main() {
 	cfg := vm.VMConfig{}
 	bootModeRaw := string(vm.BootModeLinux)
 	networkModeRaw := string(vm.NetworkModeHostOnly)
+	vmName := vm.DefaultVMName()
+	workStateRoot := ""
+	homeStateRoot := ""
+	vmManagerPath := ""
 	containerImageRef := ""
-	containerDiskPath := ""
-	containerRootfsMode := "virtiofs"
-	containerSharedHostDir := "build/virtiofs"
+	containerSharedHostDir := ""
 	virtioFSTag := "vmrunnerfs0"
 	virtioFSMountPoint := "/var/run/vmrunner"
 	containerStateMount := "/mnt/containers"
@@ -31,34 +32,73 @@ func main() {
 	containerRootfsPath := ""
 	containerStateDiskGuestPath := "/var/run/vmrunner"
 	ociSpecPath := ""
-	generatedSpecOut := "build/oci-default.json"
+	generatedSpecOut := ""
 	containerID := "vmrunner-container"
 
+	flag.StringVar(&vmName, "vm-name", vmName, "VM name (used under work state dir)")
+	flag.StringVar(&workStateRoot, "work-state-root", "", "Work state root (default: <cwd>/.slopvmrunner)")
+	flag.StringVar(&homeStateRoot, "home-state-root", "", "Home state root (default: ~/.slopvmrunner)")
+	flag.StringVar(&vmManagerPath, "vmmanager", "", "Path to vmmanager binary (default: <home-state-root>/bin/vmmanager)")
 	flag.StringVar(&bootModeRaw, "boot-mode", string(vm.BootModeLinux), "Boot mode: linux or efi")
-	flag.StringVar(&cfg.KernelPath, "kernel", "build/kernel", "Kernel artifact path (required in linux mode)")
+	flag.StringVar(&cfg.KernelPath, "kernel", "", "Kernel artifact path (default: <home-state-root>/kernels/default)")
 	flag.StringVar(&cfg.InitrdPath, "initrd", "", "Initrd path")
-	flag.StringVar(&cfg.RootImage, "root-image", "build/rootfs.raw", "Root disk image path")
+	flag.StringVar(&cfg.RootImage, "root-image", "", "Root disk image path (default: vm-specific path in work state)")
 	flag.IntVar(&cfg.MemoryMiB, "memory-mib", 512, "VM memory in MiB")
 	flag.IntVar(&cfg.CPUs, "cpus", 2, "VM CPU count")
 	flag.IntVar(&cfg.AgentVsockPort, "agent-vsock-port", 7000, "Agent vsock port to pass via kernel cmdline")
-	flag.StringVar(&cfg.AgentReadySocketPath, "agent-ready-socket", "build/agent-ready.sock", "Unix socket path for readiness notification")
+	flag.StringVar(&cfg.AgentReadySocketPath, "agent-ready-socket", "", "Unix socket path for readiness notification")
 	flag.BoolVar(&cfg.EnableNetwork, "enable-network", false, "Attach a VM network device")
 	flag.StringVar(&networkModeRaw, "network-mode", string(vm.NetworkModeHostOnly), "VM network mode: nat, bridged, or hostonly")
 	flag.StringVar(&cfg.BridgeInterface, "bridge-interface", "", "Host interface for bridged/hostonly mode (empty = auto)")
 	flag.BoolVar(&cfg.Verbose, "verbose", false, "Enable verbose logs and guest console output")
 	flag.StringVar(&containerImageRef, "container-image", "", "OCI image reference used by RunContainer (required when running a container)")
-	flag.StringVar(&containerRootfsMode, "container-rootfs-mode", "virtiofs", "Container rootfs mode: virtiofs or disk")
-	flag.StringVar(&containerSharedHostDir, "container-shared-host-dir", "build/virtiofs", "Host directory used for virtio-fs container rootfs sharing")
-	flag.StringVar(&containerDiskPath, "container-disk", "", "Optional explicit path to extra ext4 disk attached to VM (empty = cached by manifest digest)")
+	flag.StringVar(&containerSharedHostDir, "container-shared-host-dir", "", "Host directory used for virtio-fs container rootfs sharing")
 	flag.StringVar(&virtioFSTag, "virtiofs-tag", "vmrunnerfs0", "Virtio-fs tag")
 	flag.StringVar(&virtioFSMountPoint, "virtiofs-mount-point", "/var/run/vmrunner", "Virtio-fs guest mount point hint")
 	flag.StringVar(&containerStateMount, "container-state-mount", "/mnt/containers", "Guest mountpoint for writable overlay state disk")
 	flag.IntVar(&containerDiskSizeMiB, "container-disk-size-mib", 4096, "Size of extra ext4 disk")
-	flag.StringVar(&containerDiskLabel, "container-disk-label", "vmrunner-data", "Filesystem label for extra ext4 disk")
+	flag.StringVar(&containerDiskLabel, "container-disk-label", "vmrunner-data", "Filesystem label for writable container state disk")
 	flag.StringVar(&ociSpecPath, "oci-spec", "", "Optional path to OCI config.json to run inside guest")
-	flag.StringVar(&generatedSpecOut, "oci-default-out", "build/oci-default.json", "Where to write generated default OCI spec")
+	flag.StringVar(&generatedSpecOut, "oci-default-out", "", "Where to write generated default OCI spec")
 	flag.StringVar(&containerID, "container-id", "vmrunner-container", "Container ID for OCI run")
 	flag.Parse()
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	state, err := vm.ResolveVMRunnerState(cwd, vmName, homeStateRoot, workStateRoot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	if err := state.EnsureDirs(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	if cfg.KernelPath == "" {
+		cfg.KernelPath = state.KernelPath
+	}
+	if cfg.RootImage == "" {
+		if err := state.EnsureVMRootImage(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		cfg.RootImage = state.VMRootImagePath
+	}
+	if cfg.AgentReadySocketPath == "" {
+		cfg.AgentReadySocketPath = state.ReadySocketPath
+	}
+	if containerSharedHostDir == "" {
+		containerSharedHostDir = state.VirtioFSHostDir
+	}
+	if generatedSpecOut == "" {
+		generatedSpecOut = state.DefaultOCISpec
+	}
+	if vmManagerPath == "" {
+		vmManagerPath = state.ManagerBinary
+	}
 
 	bootMode, err := vm.ParseBootMode(bootModeRaw)
 	if err != nil {
@@ -90,95 +130,55 @@ func main() {
 	}
 
 	if containerImageRef != "" || ociSpecPath != "" {
-		switch containerRootfsMode {
-		case "virtiofs":
-			if containerImageRef == "" {
-				logger.Error("container-image is required for virtiofs rootfs mode")
-				os.Exit(2)
-			}
-			if err := os.MkdirAll(containerSharedHostDir, 0o755); err != nil {
-				logger.Error("create virtiofs host dir failed", "error", err)
-				os.Exit(1)
-			}
-			cfg.EnableVirtioFS = true
-			absSharedDir, err := filepath.Abs(containerSharedHostDir)
-			if err != nil {
-				logger.Error("resolve virtiofs host dir failed", "error", err)
-				os.Exit(1)
-			}
-			cfg.VirtioFSHostDir = absSharedDir
-			cfg.VirtioFSTag = virtioFSTag
-			cfg.VirtioFSMountPoint = virtioFSMountPoint
-			cfg.OverlayStateDevice = "/dev/vdb"
-			cfg.OverlayStateMount = containerStateMount
-			containerStateDiskGuestPath = cfg.OverlayStateMount
-			const stateDiskPath = "build/container-state.raw"
-			if err := vm.CreateExt4Disk(ctx, stateDiskPath, containerDiskSizeMiB, "vmrunner-state"); err != nil {
-				logger.Error("create container state disk failed", "error", err)
-				os.Exit(1)
-			}
-			absStateDisk, err := filepath.Abs(stateDiskPath)
-			if err != nil {
-				logger.Error("resolve container state disk path failed", "error", err)
-				os.Exit(1)
-			}
-			cfg.ExtraDiskPaths = append(cfg.ExtraDiskPaths, absStateDisk)
-			imageHash, _, err := vm.PrepareSharedContainerRootFS(ctx, containerImageRef, cfg.VirtioFSHostDir)
-			if err != nil {
-				logger.Error("prepare shared container rootfs failed", "error", err)
-				os.Exit(1)
-			}
-			containerRootfsPath = filepath.Join(cfg.VirtioFSMountPoint, imageHash, "rootfs")
-			hostRootfsPath := filepath.Join(cfg.VirtioFSHostDir, imageHash, "rootfs")
-			if _, err := os.Stat(hostRootfsPath); err != nil {
-				logger.Error("prepared virtiofs rootfs missing on host", "path", hostRootfsPath, "error", err)
-				os.Exit(1)
-			}
-			if cfg.Verbose {
-				logger.Debug("virtiofs configured", "host_dir", absSharedDir, "tag", virtioFSTag, "mount_point", virtioFSMountPoint)
-			}
-		case "disk":
-			if containerImageRef != "" {
-				if containerDiskPath == "" {
-					cachePath, built, err := vm.PrepareImageExt4Disk(ctx, containerImageRef, "build/image-disks", containerDiskSizeMiB, containerDiskLabel)
-					if err != nil {
-						logger.Error("prepare cached image disk failed", "error", err)
-						os.Exit(1)
-					}
-					containerDiskPath = cachePath
-					if cfg.Verbose {
-						logger.Debug("image disk prepared", "path", containerDiskPath, "built", built)
-					}
-				} else {
-					logger.Info("building ext4 image disk from registry image", "image", containerImageRef, "path", containerDiskPath, "size_mib", containerDiskSizeMiB)
-					if err := vm.BuildImageExt4Disk(ctx, containerImageRef, containerDiskPath, containerDiskSizeMiB, containerDiskLabel); err != nil {
-						logger.Error("build image ext4 disk failed", "error", err)
-						os.Exit(1)
-					}
-				}
-			} else {
-				logger.Info("creating ext4 container disk", "path", containerDiskPath, "size_mib", containerDiskSizeMiB)
-				if err := vm.CreateExt4Disk(ctx, containerDiskPath, containerDiskSizeMiB, containerDiskLabel); err != nil {
-					logger.Error("create ext4 disk failed", "error", err)
-					os.Exit(1)
-				}
-			}
-			absDiskPath, err := filepath.Abs(containerDiskPath)
-			if err != nil {
-				logger.Error("resolve container disk path failed", "error", err)
-				os.Exit(1)
-			}
-			cfg.ExtraDiskPaths = append(cfg.ExtraDiskPaths, absDiskPath)
-			containerRootfsPath = filepath.Join("/run/vmrunner/image-disk", "images", vmSanitizeImageRef(containerImageRef), "rootfs")
-			containerStateDiskGuestPath = "/var/run/vmrunner"
-		default:
-			logger.Error("invalid container-rootfs-mode", "mode", containerRootfsMode)
+		if containerImageRef == "" {
+			logger.Error("container-image is required for virtiofs mode")
 			os.Exit(2)
+		}
+		if err := os.MkdirAll(containerSharedHostDir, 0o755); err != nil {
+			logger.Error("create virtiofs host dir failed", "error", err)
+			os.Exit(1)
+		}
+		cfg.EnableVirtioFS = true
+		absSharedDir, err := filepath.Abs(containerSharedHostDir)
+		if err != nil {
+			logger.Error("resolve virtiofs host dir failed", "error", err)
+			os.Exit(1)
+		}
+		cfg.VirtioFSHostDir = absSharedDir
+		cfg.VirtioFSTag = virtioFSTag
+		cfg.VirtioFSMountPoint = virtioFSMountPoint
+		cfg.OverlayStateDevice = "/dev/vdb"
+		cfg.OverlayStateMount = containerStateMount
+		containerStateDiskGuestPath = cfg.OverlayStateMount
+		stateDiskPath := state.ContainerState
+		if err := vm.CreateExt4Disk(ctx, stateDiskPath, containerDiskSizeMiB, "vmrunner-state"); err != nil {
+			logger.Error("create container state disk failed", "error", err)
+			os.Exit(1)
+		}
+		absStateDisk, err := filepath.Abs(stateDiskPath)
+		if err != nil {
+			logger.Error("resolve container state disk path failed", "error", err)
+			os.Exit(1)
+		}
+		cfg.ExtraDiskPaths = append(cfg.ExtraDiskPaths, absStateDisk)
+		imageHash, _, err := vm.PrepareSharedContainerRootFS(ctx, containerImageRef, cfg.VirtioFSHostDir)
+		if err != nil {
+			logger.Error("prepare shared container rootfs failed", "error", err)
+			os.Exit(1)
+		}
+		containerRootfsPath = filepath.Join(cfg.VirtioFSMountPoint, imageHash, "rootfs")
+		hostRootfsPath := filepath.Join(cfg.VirtioFSHostDir, imageHash, "rootfs")
+		if _, err := os.Stat(hostRootfsPath); err != nil {
+			logger.Error("prepared virtiofs rootfs missing on host", "path", hostRootfsPath, "error", err)
+			os.Exit(1)
+		}
+		if cfg.Verbose {
+			logger.Debug("virtiofs configured", "host_dir", absSharedDir, "tag", virtioFSTag, "mount_point", virtioFSMountPoint)
 		}
 	}
 
 	now := time.Now()
-	runner := vm.NewVMRunner(logger)
+	runner := vm.NewVMRunnerWithManager(logger, vmManagerPath)
 	vmCtx, err := runner.Run(ctx, cfg)
 	if err != nil {
 		logger.Error("vm runner failed", "error", err)
@@ -263,9 +263,4 @@ func main() {
 		logger.Error("vm exited with error", "error", err)
 		os.Exit(1)
 	}
-}
-
-func vmSanitizeImageRef(imageRef string) string {
-	replacer := strings.NewReplacer("/", "_", ":", "_", "@", "_")
-	return replacer.Replace(imageRef)
 }

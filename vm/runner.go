@@ -256,11 +256,18 @@ type ProxyConn struct {
 }
 
 func NewVMRunner(logger *slog.Logger) *VMRunner {
+	return NewVMRunnerWithManager(logger, "")
+}
+
+func NewVMRunnerWithManager(logger *slog.Logger, managerBinaryPath string) *VMRunner {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
+	if strings.TrimSpace(managerBinaryPath) == "" {
+		managerBinaryPath = "vmmanager"
+	}
 	return &VMRunner{
-		ManagerBinaryPath: "build/vmmanager",
+		ManagerBinaryPath: managerBinaryPath,
 		Logger:            logger,
 	}
 }

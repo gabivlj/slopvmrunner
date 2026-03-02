@@ -1,6 +1,6 @@
 # Swift Runner Flags
 
-This file documents CLI flags for the Swift VM backend (`build/vmmanager`) and the local wrapper script (`manager/run-local.sh`).
+This file documents CLI flags for the Swift VM backend (`~/.slopvmrunner/bin/vmmanager`) and the local wrapper script (`manager/run-local.sh`).
 
 For system design context, see [Architecture](architecture.md).
 
@@ -25,12 +25,12 @@ Env vars:
   Default: `manager/vmmanager.entitlements` (virtualization only, NAT-friendly).
   Bridged mode requires: `manager/vmmanager.networking.entitlements`.
 
-## `build/vmmanager`
+## `~/.slopvmrunner/bin/vmmanager`
 
 Usage:
 
 ```bash
-build/vmmanager --root-image <path> [options]
+~/.slopvmrunner/bin/vmmanager --root-image <path> [options]
 ```
 
 Flags:
@@ -101,7 +101,7 @@ make vm-binaries
 5. Verify entitlements on binary:
 
 ```bash
-codesign -d --entitlements :- build/vmmanager
+codesign -d --entitlements :- ~/.slopvmrunner/bin/vmmanager
 ```
 
 Template file:

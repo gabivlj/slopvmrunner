@@ -4,11 +4,11 @@ This is the current container mount model used by `run-container` (virtiofs mode
 
 ## Host Side
 
-- Shared virtiofs directory (default): `build/virtiofs`
+- Shared virtiofs directory (default): `./.slopvmrunner/vms/<vmName>/virtiofs`
 - Image rootfs materialization path:
-  - `build/virtiofs/<image-manifest-sha256-hex>/rootfs`
+  - `./.slopvmrunner/vms/<vmName>/virtiofs/<image-manifest-sha256-hex>/rootfs`
 - Writable state disk file:
-  - `build/container-state.raw` (ext4)
+  - `./.slopvmrunner/vms/<vmName>/container-state.raw` (ext4)
 
 ## Guest Side
 
@@ -35,7 +35,7 @@ The paths are:
 
 ## Runtime Flow
 
-1. Runner resolves/pulls image and prepares shared rootfs under `build/virtiofs/<imageHash>/rootfs`.
+1. Runner resolves/pulls image and prepares shared rootfs under `./.slopvmrunner/vms/<vmName>/virtiofs/<imageHash>/rootfs`.
 2. Runner creates/attaches writable ext4 state disk and passes mount hints via kernel cmdline.
 3. Agent mounts virtiofs at `/var/run/vmrunner` and state disk at `/mnt/containers`.
 4. Runner calls `ContainerService.create(oci, image, id, rootfsPath, containerStateDisk)`.

@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BUILD_DIR="$REPO_ROOT/build"
-ROOTFS_DIR="$BUILD_DIR/rootfs"
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/build}"
+ROOTFS_DIR="${ROOTFS_DIR:-$BUILD_DIR/rootfs-tree}"
 IMG_PATH="${1:-$BUILD_DIR/rootfs.raw}"
 SIZE_MB="${2:-1024}"
 VERBOSE="${VERBOSE:-0}"
@@ -24,6 +24,7 @@ fi
 
 make_image_with_host_tools() {
   log "creating ext4 image with host mkfs.ext4"
+  mkdir -p "$(dirname "$IMG_PATH")"
   rm -f "$IMG_PATH"
   truncate -s "${SIZE_MB}M" "$IMG_PATH"
   # -d copies full directory tree (files, symlinks, perms) into ext4 image.
@@ -33,11 +34,17 @@ make_image_with_host_tools() {
 
 make_image_with_docker() {
   log "creating ext4 image with Docker fallback"
-  local work_img="/work/build/$(basename "$IMG_PATH")"
-  local work_rootfs="/work/build/rootfs"
+  local rel_img
+  if [[ "$IMG_PATH" == "$BUILD_DIR/"* ]]; then
+    rel_img="${IMG_PATH#"$BUILD_DIR"/}"
+  else
+    rel_img="$(basename "$IMG_PATH")"
+  fi
+  local work_img="/work/build/${rel_img}"
+  local work_rootfs="/work/build/rootfs-tree"
 
   docker run --rm \
-    -v "$REPO_ROOT:/work" \
+    -v "$BUILD_DIR:/work/build" \
     -w /work \
     -e IMG_PATH="$work_img" \
     -e ROOTFS_DIR="$work_rootfs" \
@@ -49,6 +56,7 @@ make_image_with_docker() {
       apt-get update >/dev/null
       apt-get install -y --no-install-recommends e2fsprogs >/dev/null
 
+      mkdir -p "$(dirname "$IMG_PATH")"
       rm -f "$IMG_PATH"
       truncate -s "${SIZE_MB}M" "$IMG_PATH"
       mke2fs -t ext4 -F -d "$ROOTFS_DIR" "$IMG_PATH" >/dev/null

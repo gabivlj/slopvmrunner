@@ -20,10 +20,7 @@ import (
 )
 
 const (
-	defaultRuncPath    = "/usr/bin/runc"
-	defaultBundlesRoot = "/run/vmrunner/containers"
-	defaultImageDevice = "/dev/vdb"
-	defaultImageMount  = "/run/vmrunner/image-disk"
+	defaultRuncPath = "/usr/bin/runc"
 )
 
 var containerIDRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
@@ -130,10 +127,8 @@ func (c *containerServer) Start(_ context.Context, call vmapi.Container_start) e
 		return fmt.Errorf("write OCI spec: %w", err)
 	}
 
-	if c.imageRef != "" {
-		if err := bindImageRootfs(c.id, bundleDir, c.rootfsPath, c.containerStateDisk); err != nil {
-			return err
-		}
+	if err := bindImageRootfs(c.id, bundleDir, c.rootfsPath, c.containerStateDisk); err != nil {
+		return err
 	}
 
 	runcPath := os.Getenv("AGENT_RUNC_PATH")
@@ -177,9 +172,6 @@ func (c *containerServer) Start(_ context.Context, call vmapi.Container_start) e
 			}
 		},
 		cleanup: func() {
-			if c.imageRef == "" {
-				return
-			}
 			_ = syscall.Unmount(filepath.Join(bundleDir, "rootfs"), 0)
 		},
 	}
@@ -250,38 +242,7 @@ func asExitError(err error, target **exec.ExitError) bool {
 }
 
 func bindImageRootfs(containerID, bundleDir, rootfsPath, containerStateDisk string) error {
-	if virtioFSEnabled() {
-		return mountOverlayFromRootFS(containerID, bundleDir, rootfsPath, containerStateDisk)
-	}
-
-	mountPoint, err := ensureImageDiskMounted()
-	if err != nil {
-		return err
-	}
-
-	src := rootfsPath
-	if !strings.HasPrefix(src, "/") {
-		src = filepath.Join(mountPoint, "images", sanitizeRef(src), "rootfs")
-	}
-	info, err := os.Stat(src)
-	if err != nil {
-		return fmt.Errorf("image rootfs not found on ext4 disk at %s: %w", src, err)
-	}
-
-	if !info.IsDir() {
-		return fmt.Errorf("image rootfs path is not a directory: %s", src)
-	}
-
-	dst := filepath.Join(bundleDir, "rootfs")
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return fmt.Errorf("create bundle rootfs dir: %w", err)
-	}
-
-	if err := syscall.Mount(src, dst, "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
-		return fmt.Errorf("bind-mount image rootfs %s -> %s: %w", src, dst, err)
-	}
-
-	return nil
+	return mountOverlayFromRootFS(containerID, bundleDir, rootfsPath, containerStateDisk)
 }
 
 func mountOverlayFromRootFS(containerID, bundleDir, lower, containerStateDisk string) error {
@@ -332,37 +293,6 @@ func ensureOverlayStateMounted(mountPoint string) (string, error) {
 		return "", fmt.Errorf("mount overlay state disk %s at %s: %w", device, mountPoint, err)
 	}
 	return mountPoint, nil
-}
-
-func ensureImageDiskMounted() (string, error) {
-	device := os.Getenv("AGENT_IMAGE_DISK_DEVICE")
-	if device == "" {
-		device = defaultImageDevice
-	}
-
-	mountPoint := os.Getenv("AGENT_IMAGE_MOUNT_POINT")
-	if mountPoint == "" {
-		mountPoint = defaultImageMount
-	}
-
-	if _, err := os.Stat(device); err != nil {
-		return "", fmt.Errorf("image disk device not found: %s (%w)", device, err)
-	}
-
-	if err := os.MkdirAll(mountPoint, 0o755); err != nil {
-		return "", fmt.Errorf("create image mountpoint: %w", err)
-	}
-
-	if err := syscall.Mount(device, mountPoint, "ext4", 0, ""); err != nil && err != syscall.EBUSY {
-		return "", fmt.Errorf("mount image disk %s at %s: %w", device, mountPoint, err)
-	}
-
-	return mountPoint, nil
-}
-
-func sanitizeRef(imageRef string) string {
-	replacer := strings.NewReplacer("/", "_", ":", "_", "@", "_")
-	return replacer.Replace(imageRef)
 }
 
 func pumpToByteStream(src io.ReadCloser, dst vmapi.ByteStream) {

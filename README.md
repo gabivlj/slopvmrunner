@@ -17,14 +17,19 @@ make run-go
 
 Key outputs:
 
-- `build/vm`: Go VM launcher
-- `build/kernel`: Linux kernel artifact
-- `build/rootfs.raw`: guest root disk
+- `~/.slopvmrunner/bin/vm`: Go VM launcher
+- `~/.slopvmrunner/kernels/default`: Linux kernel artifact
+- `~/.slopvmrunner/rootfs/default.raw`: guest base root disk
 
 Container scaffold:
 
 - `make run-container IMAGE=<ref>` runs a container from an OCI image reference and auto-generates a default OCI spec when `--oci-spec` is not provided.
 - Default path uses virtiofs for read-only image rootfs sharing and an ext4 state disk for writable overlay state.
+
+State layout:
+
+- Global install artifacts: `~/.slopvmrunner/`
+- Per-workdir VM state: `./.slopvmrunner/vms/<vmName>/`
 
 ## Repository Layout
 
