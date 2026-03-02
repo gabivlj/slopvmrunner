@@ -30,6 +30,12 @@ struct ManagerConfig {
     let vmNetworkCIDR: String?
     let vmNetworkGateway: String?
     let vmNetworkIfName: String?
+    let enableVirtioFS: Bool
+    let virtioFSHostDir: String?
+    let virtioFSTag: String?
+    let virtioFSMountPoint: String?
+    let overlayStateDevice: String?
+    let overlayStateMount: String?
     let verbose: Bool
 
     var bootArgs: String {
@@ -51,6 +57,22 @@ struct ManagerConfig {
             }
             if let vmNetworkIfName, !vmNetworkIfName.isEmpty {
                 args.append("agent.network_ifname=\(vmNetworkIfName)")
+            }
+        }
+
+        if enableVirtioFS {
+            if let virtioFSTag, !virtioFSTag.isEmpty {
+                args.append("agent.virtiofs=1")
+                args.append("agent.virtiofs_tag=\(virtioFSTag)")
+            }
+            if let virtioFSMountPoint, !virtioFSMountPoint.isEmpty {
+                args.append("agent.virtiofs_mount=\(virtioFSMountPoint)")
+            }
+            if let overlayStateDevice, !overlayStateDevice.isEmpty {
+                args.append("agent.overlay_device=\(overlayStateDevice)")
+            }
+            if let overlayStateMount, !overlayStateMount.isEmpty {
+                args.append("agent.overlay_mount=\(overlayStateMount)")
             }
         }
 
@@ -275,6 +297,12 @@ struct VMManagerCLI {
         var vmNetworkCIDR: String?
         var vmNetworkGateway: String?
         var vmNetworkIfName: String?
+        var enableVirtioFS = false
+        var virtioFSHostDir: String?
+        var virtioFSTag: String?
+        var virtioFSMountPoint: String?
+        var overlayStateDevice: String?
+        var overlayStateMount: String?
         var verbose = false
 
         var i = 1
@@ -337,6 +365,27 @@ struct VMManagerCLI {
                 i += 1; vmNetworkGateway = value(at: i, for: arg)
             case "--vm-network-ifname":
                 i += 1; vmNetworkIfName = value(at: i, for: arg)
+            case "--enable-virtiofs":
+                i += 1
+                let raw = value(at: i, for: arg).lowercased()
+                switch raw {
+                case "true", "1", "yes", "on":
+                    enableVirtioFS = true
+                case "false", "0", "no", "off":
+                    enableVirtioFS = false
+                default:
+                    throw CLIError.invalidArg("--enable-virtiofs must be true/false")
+                }
+            case "--virtiofs-host-dir":
+                i += 1; virtioFSHostDir = value(at: i, for: arg)
+            case "--virtiofs-tag":
+                i += 1; virtioFSTag = value(at: i, for: arg)
+            case "--virtiofs-mount-point":
+                i += 1; virtioFSMountPoint = value(at: i, for: arg)
+            case "--overlay-state-device":
+                i += 1; overlayStateDevice = value(at: i, for: arg)
+            case "--overlay-state-mount":
+                i += 1; overlayStateMount = value(at: i, for: arg)
             case "--verbose":
                 verbose = true
             case "--help", "-h":
@@ -372,6 +421,12 @@ struct VMManagerCLI {
             vmNetworkCIDR: vmNetworkCIDR,
             vmNetworkGateway: vmNetworkGateway,
             vmNetworkIfName: vmNetworkIfName,
+            enableVirtioFS: enableVirtioFS,
+            virtioFSHostDir: virtioFSHostDir,
+            virtioFSTag: virtioFSTag,
+            virtioFSMountPoint: virtioFSMountPoint,
+            overlayStateDevice: overlayStateDevice,
+            overlayStateMount: overlayStateMount,
             verbose: verbose
         )
     }
@@ -406,6 +461,12 @@ Options:
   --vm-network-cidr <cidr>  Optional CIDR passed to guest cmdline
   --vm-network-gateway <ip> Optional gateway passed to guest cmdline
   --vm-network-ifname <name> Optional ifname passed to guest cmdline
+  --enable-virtiofs <bool> Default false
+  --virtiofs-host-dir <path> Host directory shared via virtio-fs
+  --virtiofs-tag <tag>      Virtio-fs tag passed to guest
+  --virtiofs-mount-point <path> Mountpoint hint passed to guest cmdline
+  --overlay-state-device <path> Overlay writable disk device passed to guest cmdline
+  --overlay-state-mount <path> Overlay writable disk mountpoint passed to guest cmdline
   --verbose               Enable manager debug logs
   -h, --help              Show help
 """
@@ -493,6 +554,22 @@ Options:
             vmConfig.networkDevices = [netDevice]
         } else {
             vmConfig.networkDevices = []
+        }
+
+        if config.enableVirtioFS {
+            guard let hostDir = config.virtioFSHostDir, !hostDir.isEmpty else {
+                throw CLIError.invalidArg("missing --virtiofs-host-dir when --enable-virtiofs=true")
+            }
+            guard let tag = config.virtioFSTag, !tag.isEmpty else {
+                throw CLIError.invalidArg("missing --virtiofs-tag when --enable-virtiofs=true")
+            }
+            let share = VZSharedDirectory(url: URL(fileURLWithPath: hostDir), readOnly: false)
+            let singleShare = VZSingleDirectoryShare(directory: share)
+            let fs = VZVirtioFileSystemDeviceConfiguration(tag: tag)
+            fs.share = singleShare
+            vmConfig.directorySharingDevices = [fs]
+        } else {
+            vmConfig.directorySharingDevices = []
         }
 
         let socketConfig = VZVirtioSocketDeviceConfiguration()

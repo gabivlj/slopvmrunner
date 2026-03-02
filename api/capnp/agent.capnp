@@ -32,7 +32,7 @@ interface Container {
 }
 
 interface ContainerService {
-  create @0 (oci :Data, image :Text, id :Text) -> (container :Container);
+  create @0 (oci :Data, image :Text, id :Text, rootfsPath :Text, containerStateDisk :Text) -> (container :Container);
 }
 
 interface Agent {

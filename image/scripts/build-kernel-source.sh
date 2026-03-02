@@ -95,6 +95,7 @@ docker run --rm \
                    --enable VIRTIO \
                    --enable VIRTIO_MMIO \
                    --enable VIRTIO_BLK \
+                   --enable VIRTIO_FS \
                    --enable VIRTIO_NET \
                    --enable VIRTIO_CONSOLE \
                    --enable NET \
@@ -187,6 +188,7 @@ docker run --rm \
                    --enable INET_ESP \
                    --enable INET6_ESP \
                    --enable EXT4_FS \
+                   --enable FUSE_FS \
                    --enable TMPFS \
                    --enable CGROUPS \
                    --enable NAMESPACES \

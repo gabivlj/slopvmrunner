@@ -86,11 +86,6 @@ run_source_fallback() {
   "$SCRIPT_DIR/build-kernel-source.sh"
 }
 
-if [[ -f "$BUILD_DIR/kernel" ]]; then
-  cp -f "$BUILD_DIR/kernel" "$KERNEL_BACKUP"
-  KERNEL_BACKUP_CREATED=1
-fi
-
 case "$KERNEL_MODE" in
   package)
     build_from_packages

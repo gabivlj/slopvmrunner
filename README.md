@@ -23,7 +23,8 @@ Key outputs:
 
 Container scaffold:
 
-- `make run-container IMAGE=<ref>` runs `RunOCI` from an actual image reference (host populates ext4 image disk, guest mounts it for rootfs) and auto-generates a default OCI spec if `--oci-spec` is not provided.
+- `make run-container IMAGE=<ref>` runs a container from an OCI image reference and auto-generates a default OCI spec when `--oci-spec` is not provided.
+- Default path uses virtiofs for read-only image rootfs sharing and an ext4 state disk for writable overlay state.
 
 ## Repository Layout
 
@@ -37,5 +38,6 @@ Container scaffold:
 
 - [Build & Run](docs/build-run.md)
 - [Architecture](docs/architecture.md)
+- [Mount Setup](docs/mounts.md)
 - [Swift Runner Flags](docs/swiftrunner.md)
 - [Constraints](docs/constraints.md)

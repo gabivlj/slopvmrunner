@@ -92,6 +92,12 @@ type VMConfig struct {
 	VMNetworkCIDR        string
 	VMNetworkGateway     string
 	VMNetworkIfName      string
+	EnableVirtioFS       bool
+	VirtioFSHostDir      string
+	VirtioFSTag          string
+	VirtioFSMountPoint   string
+	OverlayStateDevice   string
+	OverlayStateMount    string
 	Verbose              bool
 }
 
@@ -145,6 +151,17 @@ func (c VMConfig) Validate() error {
 			}
 		}
 	}
+	if c.EnableVirtioFS {
+		if strings.TrimSpace(c.VirtioFSHostDir) == "" {
+			return errors.New("virtiofs host dir is required when virtiofs is enabled")
+		}
+		if strings.TrimSpace(c.VirtioFSTag) == "" {
+			return errors.New("virtiofs tag is required when virtiofs is enabled")
+		}
+		if strings.TrimSpace(c.OverlayStateMount) == "" {
+			return errors.New("overlay state mount is required when virtiofs is enabled")
+		}
+	}
 	return nil
 }
 
@@ -168,6 +185,22 @@ func (c VMConfig) ManagerArgs() ([]string, error) {
 		"--agent-ready-socket", c.AgentReadySocketPath,
 		"--enable-network", strconv.FormatBool(c.EnableNetwork),
 		"--network-mode", c.NetworkMode.String(),
+		"--enable-virtiofs", strconv.FormatBool(c.EnableVirtioFS),
+	}
+	if c.VirtioFSHostDir != "" {
+		args = append(args, "--virtiofs-host-dir", c.VirtioFSHostDir)
+	}
+	if c.VirtioFSTag != "" {
+		args = append(args, "--virtiofs-tag", c.VirtioFSTag)
+	}
+	if c.VirtioFSMountPoint != "" {
+		args = append(args, "--virtiofs-mount-point", c.VirtioFSMountPoint)
+	}
+	if c.OverlayStateDevice != "" {
+		args = append(args, "--overlay-state-device", c.OverlayStateDevice)
+	}
+	if c.OverlayStateMount != "" {
+		args = append(args, "--overlay-state-mount", c.OverlayStateMount)
 	}
 	for _, diskPath := range c.ExtraDiskPaths {
 		args = append(args, "--extra-disk", diskPath)

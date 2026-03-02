@@ -4,6 +4,7 @@ Related docs:
 
 - [Build & Run](build-run.md)
 - [Swift Runner Flags](swiftrunner.md)
+- [Mount Setup](mounts.md)
 
 ## Components
 
@@ -26,7 +27,7 @@ Current capability split:
 - `Agent.containerService() -> ContainerService`
 - `Network.configureInterface(ifName, cidr, gateway)`
 - `Network.setupVsockProxy(port)`
-- `ContainerService.create(oci, image, id) -> Container`
+- `ContainerService.create(oci, image, id, rootfsPath, containerStateDisk) -> Container`
 - `Container.start(stdout, stderr) -> Task`
 - `Task.stdin() -> ByteStream`
 - `Task.exitCode() -> Int32`

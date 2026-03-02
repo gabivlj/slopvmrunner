@@ -62,7 +62,12 @@ func TestBenchmarkAccepted(t *testing.T) {
 		}
 	}
 
-	readySock := filepath.Join(t.TempDir(), "agent-ready.sock")
+	shortTmpDir, err := os.MkdirTemp("", "vmr-vfs-")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	defer os.RemoveAll(shortTmpDir)
+	readySock := filepath.Join(shortTmpDir, "a.sock")
 
 	cfg := VMConfig{
 		BootMode:             BootModeLinux,
@@ -231,7 +236,12 @@ func TestBenchmarkVsock(t *testing.T) {
 		}
 	}
 
-	readySock := filepath.Join(t.TempDir(), "agent-ready.sock")
+	shortTmpDir, err := os.MkdirTemp("", "vmr-vsock-")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	defer os.RemoveAll(shortTmpDir)
+	readySock := filepath.Join(shortTmpDir, "a.sock")
 
 	const (
 		benchConnCount = 15
@@ -561,7 +571,7 @@ func TestBenchmarkContainerStartup(t *testing.T) {
 	containerID := fmt.Sprintf("bench-%d", time.Now().UnixNano())
 	specJSON, err := BuildDefaultOCISpecJSON(DefaultOCISpecOptions{
 		ImageRef:   imageRef,
-		RootfsPath: fmt.Sprintf("/run/vmrunner/containers/%s/rootfs", containerID),
+		RootfsPath: "rootfs",
 		Entrypoint: []string{"/bin/sh", "-lc"},
 		Cmd:        []string{"echo hello world"},
 	})
@@ -587,7 +597,13 @@ func TestBenchmarkContainerStartup(t *testing.T) {
 		if err := p.SetImage(imageRef); err != nil {
 			return err
 		}
-		return p.SetId(containerID)
+		if err := p.SetId(containerID); err != nil {
+			return err
+		}
+		if err := p.SetRootfsPath(fmt.Sprintf("/run/vmrunner/image-disk/images/%s/rootfs", sanitizeImageRef(imageRef))); err != nil {
+			return err
+		}
+		return p.SetContainerStateDisk("/var/run/vmrunner")
 	})
 	createRes, err := createFuture.Struct()
 	if err != nil {
@@ -654,6 +670,169 @@ func TestBenchmarkContainerStartup(t *testing.T) {
 		t.Logf("container non-zero exit stderr=%q", stderrText)
 		t.Logf("container non-zero exit stdout=%q", stdoutText)
 		t.Fatalf("unexpected exit code: %d stdout=%q stderr=%q", exitRes.Code(), stdoutText, stderrText)
+	}
+
+	if err := vmCtx.Kill(); err != nil {
+		t.Fatalf("kill vm: %v", err)
+	}
+}
+
+func TestVirtioFSContainerStartup(t *testing.T) {
+	repoRoot := filepath.Clean("..")
+	kernelPath := filepath.Join(repoRoot, "build", "kernel")
+	rootImagePath := filepath.Join(repoRoot, "build", "rootfs.raw")
+	managerPath := filepath.Join(repoRoot, "build", "vmmanager")
+
+	for _, p := range []string{kernelPath, rootImagePath, managerPath} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("missing required artifact %q: %v (run `make image vm-binaries`)", p, err)
+		}
+	}
+
+	imageRef := os.Getenv("IMAGE")
+	if imageRef == "" {
+		imageRef = "docker.io/library/ubuntu:latest"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+
+	sharedHostDir := filepath.Join(t.TempDir(), "virtiofs")
+	if err := os.MkdirAll(sharedHostDir, 0o755); err != nil {
+		t.Fatalf("create shared host dir: %v", err)
+	}
+
+	imageHash, _, err := PrepareSharedContainerRootFS(ctx, imageRef, sharedHostDir)
+	if err != nil {
+		t.Fatalf("prepare shared rootfs: %v", err)
+	}
+
+	stateDiskPath := filepath.Join(t.TempDir(), "container-state.raw")
+	if err := CreateExt4Disk(ctx, stateDiskPath, 2048, "vmrunner-state"); err != nil {
+		t.Fatalf("create state disk: %v", err)
+	}
+	stateDiskAbs, err := filepath.Abs(stateDiskPath)
+	if err != nil {
+		t.Fatalf("resolve state disk path: %v", err)
+	}
+
+	shortTmpDir, err := os.MkdirTemp("", "vmr-vfs-")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	defer os.RemoveAll(shortTmpDir)
+	readySock := filepath.Join(shortTmpDir, "a.sock")
+	cfg := VMConfig{
+		BootMode:             BootModeLinux,
+		KernelPath:           kernelPath,
+		RootImage:            rootImagePath,
+		MemoryMiB:            2048,
+		CPUs:                 4,
+		AgentVsockPort:       7000,
+		AgentReadySocketPath: readySock,
+		ExtraDiskPaths:       []string{stateDiskAbs},
+		EnableVirtioFS:       true,
+		VirtioFSHostDir:      sharedHostDir,
+		VirtioFSTag:          "vmrunnerfs0",
+		VirtioFSMountPoint:   "/var/run/vmrunner",
+		OverlayStateDevice:   "/dev/vdb",
+		OverlayStateMount:    "/mnt/containers",
+		Verbose:              false,
+	}
+
+	runner := NewVMRunner(nil)
+	runner.ManagerBinaryPath = managerPath
+
+	vmCtx, err := runner.Run(ctx, cfg)
+	if err != nil {
+		t.Fatalf("run vm: %v", err)
+	}
+	defer vmCtx.Close()
+
+	agent := vmCtx.Agent()
+	defer agent.Release()
+
+	containerID := fmt.Sprintf("virtiofs-%d", time.Now().UnixNano())
+	specJSON, err := BuildDefaultOCISpecJSON(DefaultOCISpecOptions{
+		ImageRef:   imageRef,
+		RootfsPath: "rootfs",
+		Entrypoint: []string{"/bin/sh", "-lc"},
+		Cmd:        []string{"echo hello world"},
+	})
+	if err != nil {
+		t.Fatalf("build default spec: %v", err)
+	}
+
+	svcFuture, svcRelease := agent.ContainerService(ctx, nil)
+	svcRes, err := svcFuture.Struct()
+	if err != nil {
+		svcRelease()
+		t.Fatalf("container service call failed: %v", err)
+	}
+	svc := svcRes.Service().AddRef()
+	svcRelease()
+	defer svc.Release()
+
+	createFuture, createRelease := svc.Create(ctx, func(p vmapi.ContainerService_create_Params) error {
+		if err := p.SetOci(specJSON); err != nil {
+			return err
+		}
+		if err := p.SetImage(imageRef); err != nil {
+			return err
+		}
+		if err := p.SetId(containerID); err != nil {
+			return err
+		}
+		if err := p.SetRootfsPath(filepath.Join("/var/run/vmrunner", imageHash, "rootfs")); err != nil {
+			return err
+		}
+		return p.SetContainerStateDisk("/mnt/containers")
+	})
+	createRes, err := createFuture.Struct()
+	if err != nil {
+		createRelease()
+		t.Fatalf("create container failed: %v", err)
+	}
+	container := createRes.Container().AddRef()
+	createRelease()
+	defer container.Release()
+
+	stdoutSink := &benchStreamSink{}
+	stderrSink := &benchStreamSink{}
+	stdoutCap := vmapi.ByteStream_ServerToClient(stdoutSink)
+	defer stdoutCap.Release()
+	stderrCap := vmapi.ByteStream_ServerToClient(stderrSink)
+	defer stderrCap.Release()
+
+	startFuture, startRelease := container.Start(ctx, func(p vmapi.Container_start_Params) error {
+		if err := p.SetStdout(stdoutCap); err != nil {
+			return err
+		}
+		return p.SetStderr(stderrCap)
+	})
+	startRes, err := startFuture.Struct()
+	if err != nil {
+		startRelease()
+		t.Fatalf("start container failed: %v", err)
+	}
+	task := startRes.Task().AddRef()
+	startRelease()
+	defer task.Release()
+
+	exitFuture, exitRelease := task.ExitCode(ctx, nil)
+	defer exitRelease()
+	exitRes, err := exitFuture.Struct()
+	if err != nil {
+		t.Fatalf("wait exit code failed: %v", err)
+	}
+
+	_, _, stdoutText := stdoutSink.snapshot()
+	_, _, stderrText := stderrSink.snapshot()
+	if !strings.Contains(stdoutText, "hello world") {
+		t.Fatalf("expected stdout to contain %q, got stdout=%q stderr=%q", "hello world", stdoutText, stderrText)
+	}
+	if exitRes.Code() != 0 {
+		t.Fatalf("unexpected exit code=%d stdout=%q stderr=%q", exitRes.Code(), stdoutText, stderrText)
 	}
 
 	if err := vmCtx.Kill(); err != nil {

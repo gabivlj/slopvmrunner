@@ -68,7 +68,7 @@ func (s *linePrinterStream) Done(_ context.Context, _ vmapi.ByteStream_done) err
 	return nil
 }
 
-func RunContainer(ctx context.Context, agent vmapi.Agent, id, imageRef string, specJSON []byte) (ContainerResult, error) {
+func RunContainer(ctx context.Context, agent vmapi.Agent, id, imageRef, rootfsPath, containerStateDisk string, specJSON []byte) (ContainerResult, error) {
 	svcFuture, svcRelease := agent.ContainerService(ctx, nil)
 	defer svcRelease()
 	svcRes, err := svcFuture.Struct()
@@ -85,7 +85,13 @@ func RunContainer(ctx context.Context, agent vmapi.Agent, id, imageRef string, s
 		if err := p.SetImage(imageRef); err != nil {
 			return err
 		}
-		return p.SetId(id)
+		if err := p.SetId(id); err != nil {
+			return err
+		}
+		if err := p.SetRootfsPath(rootfsPath); err != nil {
+			return err
+		}
+		return p.SetContainerStateDisk(containerStateDisk)
 	})
 	defer createRelease()
 	createRes, err := createFuture.Struct()
@@ -129,6 +135,6 @@ func RunContainer(ctx context.Context, agent vmapi.Agent, id, imageRef string, s
 }
 
 // Backward-compat shim while callers migrate.
-func RunOCI(ctx context.Context, agent vmapi.Agent, id, imageRef string, specJSON []byte) (ContainerResult, error) {
-	return RunContainer(ctx, agent, id, imageRef, specJSON)
+func RunOCI(ctx context.Context, agent vmapi.Agent, id, imageRef, rootfsPath, containerStateDisk string, specJSON []byte) (ContainerResult, error) {
+	return RunContainer(ctx, agent, id, imageRef, rootfsPath, containerStateDisk, specJSON)
 }

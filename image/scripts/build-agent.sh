@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-OUT_DIR="$REPO_ROOT/build"
+OUT_DIR="${BUILD_DIR:-$REPO_ROOT/build}"
 VERBOSE="${VERBOSE:-0}"
 
 if [[ "$VERBOSE" == "1" ]]; then

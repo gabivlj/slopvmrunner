@@ -31,9 +31,11 @@ var containerIDRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 type containerServiceServer struct{}
 
 type containerServer struct {
-	id       string
-	imageRef string
-	ociSpec  []byte
+	id                 string
+	imageRef           string
+	ociSpec            []byte
+	rootfsPath         string
+	containerStateDisk string
 }
 
 type taskServer struct {
@@ -77,6 +79,20 @@ func (containerServiceServer) Create(_ context.Context, call vmapi.ContainerServ
 	if err != nil {
 		return err
 	}
+	rootfsPath, err := call.Args().RootfsPath()
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(rootfsPath) == "" {
+		return fmt.Errorf("rootfsPath is required")
+	}
+	containerStateDisk, err := call.Args().ContainerStateDisk()
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(containerStateDisk) == "" {
+		return fmt.Errorf("containerStateDisk is required")
+	}
 	if len(ociSpec) == 0 {
 		return fmt.Errorf("oci spec is empty")
 	}
@@ -86,15 +102,25 @@ func (containerServiceServer) Create(_ context.Context, call vmapi.ContainerServ
 		return err
 	}
 	container := vmapi.Container_ServerToClient(&containerServer{
-		id:       id,
-		imageRef: imageRef,
-		ociSpec:  append([]byte(nil), ociSpec...),
+		id:                 id,
+		imageRef:           imageRef,
+		ociSpec:            append([]byte(nil), ociSpec...),
+		rootfsPath:         rootfsPath,
+		containerStateDisk: containerStateDisk,
 	})
 	return res.SetContainer(container)
 }
 
 func (c *containerServer) Start(_ context.Context, call vmapi.Container_start) error {
-	bundleDir := filepath.Join(defaultBundlesRoot, c.id)
+	if virtioFSEnabled() {
+		// In virtiofs mode bundle/state live on the writable state disk mount.
+		// Mount it before creating bundle/config so files aren't hidden by a later mount.
+		if _, err := ensureOverlayStateMounted(c.containerStateDisk); err != nil {
+			return err
+		}
+	}
+
+	bundleDir := filepath.Join(c.containerStateDisk, c.id, "bundle")
 	if err := os.MkdirAll(bundleDir, 0o755); err != nil {
 		return fmt.Errorf("create bundle dir %q: %w", bundleDir, err)
 	}
@@ -105,7 +131,7 @@ func (c *containerServer) Start(_ context.Context, call vmapi.Container_start) e
 	}
 
 	if c.imageRef != "" {
-		if err := bindImageRootfs(bundleDir, c.imageRef); err != nil {
+		if err := bindImageRootfs(c.id, bundleDir, c.rootfsPath, c.containerStateDisk); err != nil {
 			return err
 		}
 	}
@@ -223,13 +249,20 @@ func asExitError(err error, target **exec.ExitError) bool {
 	return true
 }
 
-func bindImageRootfs(bundleDir, imageRef string) error {
+func bindImageRootfs(containerID, bundleDir, rootfsPath, containerStateDisk string) error {
+	if virtioFSEnabled() {
+		return mountOverlayFromRootFS(containerID, bundleDir, rootfsPath, containerStateDisk)
+	}
+
 	mountPoint, err := ensureImageDiskMounted()
 	if err != nil {
 		return err
 	}
 
-	src := filepath.Join(mountPoint, "images", sanitizeRef(imageRef), "rootfs")
+	src := rootfsPath
+	if !strings.HasPrefix(src, "/") {
+		src = filepath.Join(mountPoint, "images", sanitizeRef(src), "rootfs")
+	}
 	info, err := os.Stat(src)
 	if err != nil {
 		return fmt.Errorf("image rootfs not found on ext4 disk at %s: %w", src, err)
@@ -249,6 +282,56 @@ func bindImageRootfs(bundleDir, imageRef string) error {
 	}
 
 	return nil
+}
+
+func mountOverlayFromRootFS(containerID, bundleDir, lower, containerStateDisk string) error {
+	info, err := os.Stat(lower)
+	if err != nil {
+		return fmt.Errorf("lowerdir not found at %s: %w", lower, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("lowerdir is not directory: %s", lower)
+	}
+	stateMount, err := ensureOverlayStateMounted(containerStateDisk)
+	if err != nil {
+		return err
+	}
+	runRoot := filepath.Join(stateMount, containerID)
+	overlaysRoot := filepath.Join(runRoot, "overlays")
+	upper := filepath.Join(overlaysRoot, "diff")
+	work := filepath.Join(overlaysRoot, "work")
+	merged := filepath.Join(bundleDir, "rootfs")
+	if err := os.MkdirAll(upper, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(merged, 0o755); err != nil {
+		return err
+	}
+	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", lower, upper, work)
+	if err := syscall.Mount("overlay", merged, "overlay", 0, opts); err != nil {
+		return fmt.Errorf("mount overlay lower=%s upper=%s work=%s merged=%s: %w", lower, upper, work, merged, err)
+	}
+	return nil
+}
+
+func ensureOverlayStateMounted(mountPoint string) (string, error) {
+	device := overlayStateDevice()
+	if strings.TrimSpace(mountPoint) == "" {
+		mountPoint = overlayStateMountPoint()
+	}
+	if _, err := os.Stat(device); err != nil {
+		return "", fmt.Errorf("overlay state disk device not found: %s (%w)", device, err)
+	}
+	if err := os.MkdirAll(mountPoint, 0o755); err != nil {
+		return "", fmt.Errorf("create overlay mountpoint %s: %w", mountPoint, err)
+	}
+	if err := syscall.Mount(device, mountPoint, "ext4", 0, ""); err != nil && err != syscall.EBUSY {
+		return "", fmt.Errorf("mount overlay state disk %s at %s: %w", device, mountPoint, err)
+	}
+	return mountPoint, nil
 }
 
 func ensureImageDiskMounted() (string, error) {
