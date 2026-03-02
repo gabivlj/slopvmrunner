@@ -134,16 +134,19 @@ func main() {
 			logger.Error("container-image is required for virtiofs mode")
 			os.Exit(2)
 		}
+
 		if err := os.MkdirAll(containerSharedHostDir, 0o755); err != nil {
 			logger.Error("create virtiofs host dir failed", "error", err)
 			os.Exit(1)
 		}
+
 		cfg.EnableVirtioFS = true
 		absSharedDir, err := filepath.Abs(containerSharedHostDir)
 		if err != nil {
 			logger.Error("resolve virtiofs host dir failed", "error", err)
 			os.Exit(1)
 		}
+
 		cfg.VirtioFSHostDir = absSharedDir
 		cfg.VirtioFSTag = virtioFSTag
 		cfg.VirtioFSMountPoint = virtioFSMountPoint
@@ -155,23 +158,27 @@ func main() {
 			logger.Error("create container state disk failed", "error", err)
 			os.Exit(1)
 		}
+
 		absStateDisk, err := filepath.Abs(stateDiskPath)
 		if err != nil {
 			logger.Error("resolve container state disk path failed", "error", err)
 			os.Exit(1)
 		}
+
 		cfg.ExtraDiskPaths = append(cfg.ExtraDiskPaths, absStateDisk)
 		imageHash, _, err := vm.PrepareSharedContainerRootFS(ctx, containerImageRef, cfg.VirtioFSHostDir)
 		if err != nil {
 			logger.Error("prepare shared container rootfs failed", "error", err)
 			os.Exit(1)
 		}
+
 		containerRootfsPath = filepath.Join(cfg.VirtioFSMountPoint, imageHash, "rootfs")
 		hostRootfsPath := filepath.Join(cfg.VirtioFSHostDir, imageHash, "rootfs")
 		if _, err := os.Stat(hostRootfsPath); err != nil {
 			logger.Error("prepared virtiofs rootfs missing on host", "path", hostRootfsPath, "error", err)
 			os.Exit(1)
 		}
+
 		if cfg.Verbose {
 			logger.Debug("virtiofs configured", "host_dir", absSharedDir, "tag", virtioFSTag, "mount_point", virtioFSMountPoint)
 		}

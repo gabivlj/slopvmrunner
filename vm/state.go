@@ -40,9 +40,11 @@ func ResolveVMRunnerState(cwd, vmName, homeRoot, workRoot string) (VMRunnerState
 	if cwd == "" {
 		return VMRunnerState{}, fmt.Errorf("cwd is required")
 	}
+
 	if vmName == "" {
 		vmName = DefaultVMName()
 	}
+
 	if homeRoot == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -50,6 +52,7 @@ func ResolveVMRunnerState(cwd, vmName, homeRoot, workRoot string) (VMRunnerState
 		}
 		homeRoot = filepath.Join(home, DefaultHomeStateDirName)
 	}
+
 	if workRoot == "" {
 		workRoot = filepath.Join(cwd, DefaultWorkStateDirName)
 	}
@@ -64,7 +67,7 @@ func ResolveVMRunnerState(cwd, vmName, homeRoot, workRoot string) (VMRunnerState
 		VMDir:            vmDir,
 		LockFilePath:     filepath.Join(vmDir, "vm.lock"),
 		ReadySocketPath:  filepath.Join(vmDir, "agent-ready.sock"),
-		VirtioFSHostDir:  filepath.Join(vmDir, "virtiofs"),
+		VirtioFSHostDir:  filepath.Join(workRoot, "images"),
 		ContainerState:   filepath.Join(vmDir, "container-state.raw"),
 		DefaultOCISpec:   filepath.Join(vmDir, "oci-default.json"),
 		VMRootImagePath:  filepath.Join(vmDir, "rootfs.raw"),
@@ -73,6 +76,7 @@ func ResolveVMRunnerState(cwd, vmName, homeRoot, workRoot string) (VMRunnerState
 		ManagerBinary:    filepath.Join(homeRoot, "bin", "vmmanager"),
 		RunnerBinaryPath: filepath.Join(homeRoot, "bin", "vm"),
 	}
+
 	return state, nil
 }
 
