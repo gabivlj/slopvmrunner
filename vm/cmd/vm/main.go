@@ -95,6 +95,9 @@ func main() {
 	if cfg.AgentReadySocketPath == "" {
 		cfg.AgentReadySocketPath = state.ReadySocketPath
 	}
+	if cfg.LockFilePath == "" {
+		cfg.LockFilePath = state.LockFilePath
+	}
 
 	if containerSharedHostDir == "" {
 		containerSharedHostDir = state.VirtioFSHostDir

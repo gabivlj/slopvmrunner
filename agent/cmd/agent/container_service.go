@@ -308,9 +308,9 @@ func mountOverlayFromRootFS(containerID, bundleDir, lower, containerStateDisk st
 }
 
 func ensureOverlayStateMounted(mountPoint string) (string, error) {
-	device := overlayStateDevice()
+	device := containerWritableDiskDevice()
 	if strings.TrimSpace(mountPoint) == "" {
-		mountPoint = overlayStateMountPoint()
+		mountPoint = overlayStateMountPointFS()
 	}
 
 	if _, err := os.Stat(device); err != nil {

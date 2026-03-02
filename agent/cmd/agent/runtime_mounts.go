@@ -28,15 +28,18 @@ func setupRuntimeMounts() error {
 		if err := os.MkdirAll(s.target, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", s.target, err)
 		}
+
 		if err := syscall.Mount(s.source, s.target, s.fstype, s.flags, s.data); err != nil {
 			// Already mounted is fine.
 			if err == syscall.EBUSY {
 				continue
 			}
+
 			// Optional mounts may be unavailable depending on kernel config.
 			if s.optional {
 				continue
 			}
+
 			return fmt.Errorf("mount %s on %s: %w", s.fstype, s.target, err)
 		}
 	}
@@ -52,13 +55,16 @@ func setupRuntimeMounts() error {
 		if err := os.MkdirAll(mountPoint, 0o755); err != nil {
 			return fmt.Errorf("mkdir virtiofs mountpoint %s: %w", mountPoint, err)
 		}
+
 		if err := syscall.Mount(tag, mountPoint, "virtiofs", 0, ""); err != nil && err != syscall.EBUSY {
 			if err == syscall.ENODEV {
 				return fmt.Errorf("mount virtiofs tag=%s mountPoint=%s: %w (guest kernel likely missing CONFIG_VIRTIO_FS)", tag, mountPoint, err)
 			}
+
 			return fmt.Errorf("mount virtiofs tag=%s mountPoint=%s: %w", tag, mountPoint, err)
 		}
 	}
+
 	return nil
 }
 
@@ -68,6 +74,7 @@ func virtioFSEnabled() bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -80,9 +87,14 @@ func virtioFSTag() string {
 			}
 		}
 	}
+
 	return "vmrunnerfs0"
 }
 
+// virtioFSMountPoint is the shared filesystem from the host to our guest,
+// it's practically a way to have a view of readonly rootfs' of images.
+// For example, when we get a request to create containers, we will use the digest
+// to find it in images/<digest> here.
 func virtioFSMountPoint() string {
 	for _, arg := range readKernelCmdline() {
 		if strings.HasPrefix(arg, "agent.virtiofs_mount=") {
@@ -95,7 +107,8 @@ func virtioFSMountPoint() string {
 	return "/run/vmrunner/shared"
 }
 
-func overlayStateDevice() string {
+// containerWritableDiskDevice is the device that we can use to write bytes, and is limited
+func containerWritableDiskDevice() string {
 	for _, arg := range readKernelCmdline() {
 		if strings.HasPrefix(arg, "agent.overlay_device=") {
 			v := strings.TrimSpace(strings.TrimPrefix(arg, "agent.overlay_device="))
@@ -104,17 +117,22 @@ func overlayStateDevice() string {
 			}
 		}
 	}
+
 	return "/dev/vdb"
 }
 
-func overlayStateMountPoint() string {
+// overlayStateMountPointFS is the mount point to writable state of the containers,
+// the writable diff.
+func overlayStateMountPointFS() string {
 	for _, arg := range readKernelCmdline() {
 		if strings.HasPrefix(arg, "agent.overlay_mount=") {
 			v := strings.TrimSpace(strings.TrimPrefix(arg, "agent.overlay_mount="))
+
 			if v != "" {
 				return v
 			}
 		}
 	}
+
 	return "/mnt/containers"
 }

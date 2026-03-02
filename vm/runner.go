@@ -18,6 +18,7 @@ import (
 
 	"capnproto.org/go/capnp/v3/rpc"
 	vmapi "github.com/gabrielvillalongasimon/vmrunner/api/gen/go/capnp"
+	"vmrunner/vm/lock"
 )
 
 type BootMode string
@@ -86,6 +87,7 @@ type VMConfig struct {
 	AgentVsockPort       int
 	ProxyVsockPorts      []int
 	AgentReadySocketPath string
+	LockFilePath         string
 	EnableNetwork        bool
 	NetworkMode          NetworkMode
 	BridgeInterface      string
@@ -245,6 +247,8 @@ type VMContext struct {
 	agent     vmapi.Agent
 	rpcConn   *rpc.Conn
 	agentRWC  *os.File
+	lockFile  *os.File
+	lockPath  string
 	proxyCh   chan ProxyConn
 	logger    *slog.Logger
 	closeOnce sync.Once
@@ -299,6 +303,7 @@ func (v *VMContext) Close() {
 		if v.agentRWC != nil {
 			_ = v.agentRWC.Close()
 		}
+		lock.Release(v.lockFile, v.lockPath)
 	})
 }
 
@@ -316,6 +321,17 @@ func (r *VMRunner) Command(ctx context.Context, cfg VMConfig) (*exec.Cmd, error)
 }
 
 func (r *VMRunner) Run(ctx context.Context, cfg VMConfig) (*VMContext, error) {
+	lockFile, err := lock.Acquire(cfg.LockFilePath)
+	if err != nil {
+		return nil, err
+	}
+	lockHeld := true
+	defer func() {
+		if lockHeld {
+			lock.Release(lockFile, cfg.LockFilePath)
+		}
+	}()
+
 	cmd, err := r.Command(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -468,6 +484,8 @@ func (r *VMRunner) Run(ctx context.Context, cfg VMConfig) (*VMContext, error) {
 		agent:    agent,
 		rpcConn:  rpcConn,
 		agentRWC: agentRWC,
+		lockFile: lockFile,
+		lockPath: cfg.LockFilePath,
 		proxyCh:  make(chan ProxyConn, 64),
 		logger:   r.Logger,
 	}
@@ -496,6 +514,7 @@ func (r *VMRunner) Run(ctx context.Context, cfg VMConfig) (*VMContext, error) {
 		close(vmCtx.waitCh)
 	}()
 
+	lockHeld = false
 	return vmCtx, nil
 }
 

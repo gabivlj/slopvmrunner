@@ -103,6 +103,7 @@ func readKernelCmdline() []string {
 	if err != nil {
 		return append([]string(nil), os.Args...)
 	}
+
 	return strings.Fields(string(data))
 }
 
