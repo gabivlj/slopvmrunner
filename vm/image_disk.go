@@ -21,14 +21,17 @@ func BuildImageExt4Disk(ctx context.Context, imageRef, diskPath string, sizeMiB 
 	if err != nil {
 		return fmt.Errorf("parse image reference %q: %w", imageRef, err)
 	}
+
 	platform, err := guestPlatform()
 	if err != nil {
 		return err
 	}
+
 	img, err := remote.Image(ref, remote.WithContext(ctx), remote.WithPlatform(platform))
 	if err != nil {
 		return fmt.Errorf("pull image %q: %w", imageRef, err)
 	}
+
 	return writeImageToDisk(ctx, img, imageRef, diskPath, sizeMiB, label)
 }
 
@@ -37,6 +40,7 @@ func writeImageToDisk(ctx context.Context, img v1.Image, imageRef, diskPath stri
 	if err != nil {
 		return fmt.Errorf("create staging dir: %w", err)
 	}
+
 	defer os.RemoveAll(stagingDir)
 
 	rootfsDir := filepath.Join(stagingDir, "images", sanitizeImageRef(imageRef), "rootfs")
@@ -54,6 +58,7 @@ func writeImageToDisk(ctx context.Context, img v1.Image, imageRef, diskPath stri
 	if err := CreateExt4DiskFromDir(ctx, diskPath, sizeMiB, label, stagingDir); err != nil {
 		return fmt.Errorf("create populated ext4 disk: %w", err)
 	}
+
 	return nil
 }
 
@@ -61,6 +66,7 @@ func PrepareImageExt4Disk(ctx context.Context, imageRef, cacheDir string, sizeMi
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", false, fmt.Errorf("create image cache dir %q: %w", cacheDir, err)
 	}
+
 	platform, err := guestPlatform()
 	if err != nil {
 		return "", false, err
@@ -85,26 +91,32 @@ func PrepareImageExt4Disk(ctx context.Context, imageRef, cacheDir string, sizeMi
 	if err != nil {
 		return "", false, fmt.Errorf("parse image reference %q: %w", imageRef, err)
 	}
+
 	desc, err := remote.Get(ref, remote.WithContext(ctx), remote.WithPlatform(platform))
 	if err != nil {
 		return "", false, fmt.Errorf("resolve manifest digest for %q: %w", imageRef, err)
 	}
+
 	digestHex := strings.TrimPrefix(desc.Digest.String(), "sha256:")
 	if digestHex == "" {
 		return "", false, fmt.Errorf("empty manifest digest for %q", imageRef)
 	}
+
 	diskPath := filepath.Join(cacheDir, digestHex+".raw")
 	if _, err := os.Stat(diskPath); err == nil {
 		_ = os.WriteFile(refCachePath, []byte(digestHex+"\n"), 0o644)
 		return diskPath, false, nil
 	}
+
 	img, err := desc.Image()
 	if err != nil {
 		return "", false, fmt.Errorf("load image descriptor for %q: %w", imageRef, err)
 	}
+
 	if err := writeImageToDisk(ctx, img, imageRef, diskPath, sizeMiB, label); err != nil {
 		return "", false, fmt.Errorf("build image disk: %w", err)
 	}
+
 	_ = os.WriteFile(refCachePath, []byte(digestHex+"\n"), 0o644)
 	return diskPath, true, nil
 }
@@ -191,9 +203,11 @@ func safeJoin(root, name string) (string, error) {
 	if clean == "." || clean == string(filepath.Separator) {
 		return "", fmt.Errorf("invalid archive path %q", name)
 	}
+
 	for strings.HasPrefix(clean, string(filepath.Separator)) {
 		clean = strings.TrimPrefix(clean, string(filepath.Separator))
 	}
+
 	full := filepath.Join(root, clean)
 	rel, err := filepath.Rel(root, full)
 	if err != nil {

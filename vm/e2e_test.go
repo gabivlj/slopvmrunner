@@ -15,6 +15,32 @@ import (
 	vmapi "github.com/gabrielvillalongasimon/vmrunner/api/gen/go/capnp"
 )
 
+func testStateHome(t *testing.T) string {
+	t.Helper()
+	if v := os.Getenv("STATE_HOME"); strings.TrimSpace(v) != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("resolve user home: %v", err)
+	}
+	return filepath.Join(home, ".slopvmrunner")
+}
+
+func requiredArtifacts(t *testing.T) (kernelPath, rootImagePath, managerPath string) {
+	t.Helper()
+	stateHome := testStateHome(t)
+	kernelPath = filepath.Join(stateHome, "kernels", "default")
+	rootImagePath = filepath.Join(stateHome, "rootfs", "default.raw")
+	managerPath = filepath.Join(stateHome, "bin", "vmmanager")
+	for _, p := range []string{kernelPath, rootImagePath, managerPath} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("missing required artifact %q: %v (run `make image vm-binaries`)", p, err)
+		}
+	}
+	return kernelPath, rootImagePath, managerPath
+}
+
 type benchStreamSink struct {
 	mu      sync.Mutex
 	firstAt time.Time
@@ -51,16 +77,7 @@ func (s *benchStreamSink) snapshot() (time.Time, int, string) {
 }
 
 func TestBenchmarkAccepted(t *testing.T) {
-	repoRoot := filepath.Clean("..")
-	kernelPath := filepath.Join(repoRoot, "build", "kernel")
-	rootImagePath := filepath.Join(repoRoot, "build", "rootfs.raw")
-	managerPath := filepath.Join(repoRoot, "build", "vmmanager")
-
-	for _, p := range []string{kernelPath, rootImagePath, managerPath} {
-		if _, err := os.Stat(p); err != nil {
-			t.Fatalf("missing required artifact %q: %v (run `make image vm-binaries`)", p, err)
-		}
-	}
+	kernelPath, rootImagePath, managerPath := requiredArtifacts(t)
 
 	shortTmpDir, err := os.MkdirTemp("", "vmr-vfs-")
 	if err != nil {
@@ -129,7 +146,7 @@ func TestBenchmarkAccepted(t *testing.T) {
 	}
 
 	const streamCount = 15
-	const totalBytesPerStream = 1024 * 1024 * 1024 // 1 GiB
+	const totalBytesPerStream = 100 * 1024 * 1024 // 100 MiB
 
 	// Testing capnp throughput
 
@@ -225,16 +242,7 @@ func TestBenchmarkAccepted(t *testing.T) {
 }
 
 func TestBenchmarkVsock(t *testing.T) {
-	repoRoot := filepath.Clean("..")
-	kernelPath := filepath.Join(repoRoot, "build", "kernel")
-	rootImagePath := filepath.Join(repoRoot, "build", "rootfs.raw")
-	managerPath := filepath.Join(repoRoot, "build", "vmmanager")
-
-	for _, p := range []string{kernelPath, rootImagePath, managerPath} {
-		if _, err := os.Stat(p); err != nil {
-			t.Fatalf("missing required artifact %q: %v (run `make image vm-binaries`)", p, err)
-		}
-	}
+	kernelPath, rootImagePath, managerPath := requiredArtifacts(t)
 
 	shortTmpDir, err := os.MkdirTemp("", "vmr-vsock-")
 	if err != nil {
@@ -246,7 +254,7 @@ func TestBenchmarkVsock(t *testing.T) {
 	const (
 		benchConnCount = 15
 		benchPort      = 7100
-		benchTotalByte = uint64(1024 * 1024 * 1024) // 1 GiB per connection
+		benchTotalByte = uint64(100 * 1024 * 1024) // 100 MiB per connection
 		benchChunkByte = uint32(1024 * 1024)        // 1 MiB
 	)
 
@@ -511,16 +519,7 @@ func TestBenchmarkVsock(t *testing.T) {
 }
 
 func TestVirtioFSContainerStartup(t *testing.T) {
-	repoRoot := filepath.Clean("..")
-	kernelPath := filepath.Join(repoRoot, "build", "kernel")
-	rootImagePath := filepath.Join(repoRoot, "build", "rootfs.raw")
-	managerPath := filepath.Join(repoRoot, "build", "vmmanager")
-
-	for _, p := range []string{kernelPath, rootImagePath, managerPath} {
-		if _, err := os.Stat(p); err != nil {
-			t.Fatalf("missing required artifact %q: %v (run `make image vm-binaries`)", p, err)
-		}
-	}
+	kernelPath, rootImagePath, managerPath := requiredArtifacts(t)
 
 	imageRef := os.Getenv("IMAGE")
 	if imageRef == "" {

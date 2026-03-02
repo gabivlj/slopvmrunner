@@ -68,18 +68,22 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
+
 	state, err := vm.ResolveVMRunnerState(cwd, vmName, homeStateRoot, workStateRoot)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
+
 	if err := state.EnsureDirs(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
+
 	if cfg.KernelPath == "" {
 		cfg.KernelPath = state.KernelPath
 	}
+
 	if cfg.RootImage == "" {
 		if err := state.EnsureVMRootImage(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -87,15 +91,19 @@ func main() {
 		}
 		cfg.RootImage = state.VMRootImagePath
 	}
+
 	if cfg.AgentReadySocketPath == "" {
 		cfg.AgentReadySocketPath = state.ReadySocketPath
 	}
+
 	if containerSharedHostDir == "" {
 		containerSharedHostDir = state.VirtioFSHostDir
 	}
+
 	if generatedSpecOut == "" {
 		generatedSpecOut = state.DefaultOCISpec
 	}
+
 	if vmManagerPath == "" {
 		vmManagerPath = state.ManagerBinary
 	}
@@ -111,12 +119,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	cfg.NetworkMode = networkMode
 
+	cfg.NetworkMode = networkMode
 	logLevel := slog.LevelError
 	if cfg.Verbose {
 		logLevel = slog.LevelDebug
 	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: logLevel,
 	}))
@@ -166,6 +175,8 @@ func main() {
 		}
 
 		cfg.ExtraDiskPaths = append(cfg.ExtraDiskPaths, absStateDisk)
+
+		// TODO: There should be an image service abstraction that handles this.
 		imageHash, _, err := vm.PrepareSharedContainerRootFS(ctx, containerImageRef, cfg.VirtioFSHostDir)
 		if err != nil {
 			logger.Error("prepare shared container rootfs failed", "error", err)
@@ -184,48 +195,15 @@ func main() {
 		}
 	}
 
-	now := time.Now()
 	runner := vm.NewVMRunnerWithManager(logger, vmManagerPath)
 	vmCtx, err := runner.Run(ctx, cfg)
 	if err != nil {
 		logger.Error("vm runner failed", "error", err)
 		os.Exit(1)
 	}
+
 	defer vmCtx.Close()
-
-	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
-	defer pingCancel()
-	pingNow := time.Now()
 	agent := vmCtx.Agent()
-	defer agent.Release()
-	debugFuture, debugRelease := agent.Debug(pingCtx, nil)
-	defer debugRelease()
-	debugRes, err := debugFuture.Struct()
-	if err != nil {
-		logger.Error("agent debug capability failed", "error", err)
-		_ = vmCtx.Kill()
-		os.Exit(1)
-	}
-	debug := debugRes.Debug()
-	defer debug.Release()
-
-	pingFuture, release := debug.Ping(pingCtx, nil)
-	defer release()
-	pingRes, err := pingFuture.Struct()
-	if err != nil {
-		logger.Error("agent ping failed", "error", err)
-		_ = vmCtx.Kill()
-		os.Exit(1)
-	}
-	msg, err := pingRes.Message_()
-	if err != nil {
-		logger.Error("agent ping decode failed", "error", err)
-		_ = vmCtx.Kill()
-		os.Exit(1)
-	}
-
-	logger.Info("agent ping ok", "message", msg, "time to e2e", time.Since(now), "pong latency", time.Since(pingNow))
-
 	var specJSON []byte
 	if ociSpecPath != "" {
 		rawSpec, err := os.ReadFile(ociSpecPath)

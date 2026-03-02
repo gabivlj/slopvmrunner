@@ -7,6 +7,8 @@
 # Project build artifacts
 /build/
 
+/build**
+
 # SwiftPM / Xcode
 manager/.build/
 manager/.swiftpm/
