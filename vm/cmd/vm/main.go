@@ -241,6 +241,7 @@ func main() {
 			_ = vmCtx.Kill()
 			os.Exit(1)
 		}
+
 		logger.Info("run container finished", "container_id", containerID, "exit_code", runRes.ExitCode)
 	}
 

@@ -62,34 +62,43 @@ func (containerServiceServer) Create(_ context.Context, call vmapi.ContainerServ
 	if err != nil {
 		return err
 	}
+
 	if !containerIDRe.MatchString(id) {
 		return fmt.Errorf("invalid container id %q", id)
 	}
+
 	imageRef, err := call.Args().Image()
 	if err != nil {
 		return err
 	}
+
 	if strings.TrimSpace(imageRef) == "" {
 		return fmt.Errorf("imageRef is required")
 	}
+
 	ociSpec, err := call.Args().Oci()
 	if err != nil {
 		return err
 	}
+
 	rootfsPath, err := call.Args().RootfsPath()
 	if err != nil {
 		return err
 	}
+
 	if strings.TrimSpace(rootfsPath) == "" {
 		return fmt.Errorf("rootfsPath is required")
 	}
+
 	containerStateDisk, err := call.Args().ContainerStateDisk()
 	if err != nil {
 		return err
 	}
+
 	if strings.TrimSpace(containerStateDisk) == "" {
 		return fmt.Errorf("containerStateDisk is required")
 	}
+
 	if len(ociSpec) == 0 {
 		return fmt.Errorf("oci spec is empty")
 	}
@@ -98,6 +107,7 @@ func (containerServiceServer) Create(_ context.Context, call vmapi.ContainerServ
 	if err != nil {
 		return err
 	}
+
 	container := vmapi.Container_ServerToClient(&containerServer{
 		id:                 id,
 		imageRef:           imageRef,
@@ -105,6 +115,7 @@ func (containerServiceServer) Create(_ context.Context, call vmapi.ContainerServ
 		rootfsPath:         rootfsPath,
 		containerStateDisk: containerStateDisk,
 	})
+
 	return res.SetContainer(container)
 }
 
@@ -135,26 +146,35 @@ func (c *containerServer) Start(_ context.Context, call vmapi.Container_start) e
 	if runcPath == "" {
 		runcPath = defaultRuncPath
 	}
+
 	cmd := exec.Command(runcPath, "run", "--bundle", bundleDir, c.id)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		// Get signals from parent.
+		Setpgid: true,
+	}
 
 	stdinW, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("stdin pipe: %w", err)
 	}
+
 	stdoutR, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("stdout pipe: %w", err)
 	}
+
 	stderrR, err := cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("stderr pipe: %w", err)
 	}
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start runc: %w", err)
 	}
 
 	stdout := call.Args().Stdout().AddRef()
 	stderr := call.Args().Stderr().AddRef()
+
 	go pumpToByteStream(stdoutR, stdout)
 	go pumpToByteStream(stderrR, stderr)
 
@@ -168,6 +188,7 @@ func (c *containerServer) Start(_ context.Context, call vmapi.Container_start) e
 				if !asExitError(taskErr, &exitErr) {
 					return -1, taskErr
 				}
+
 				return int32(exitErr.ExitCode()), nil
 			}
 		},
@@ -180,6 +201,7 @@ func (c *containerServer) Start(_ context.Context, call vmapi.Container_start) e
 	if err != nil {
 		return err
 	}
+
 	return res.SetTask(vmapi.Task_ServerToClient(task))
 }
 
@@ -250,13 +272,16 @@ func mountOverlayFromRootFS(containerID, bundleDir, lower, containerStateDisk st
 	if err != nil {
 		return fmt.Errorf("lowerdir not found at %s: %w", lower, err)
 	}
+
 	if !info.IsDir() {
 		return fmt.Errorf("lowerdir is not directory: %s", lower)
 	}
+
 	stateMount, err := ensureOverlayStateMounted(containerStateDisk)
 	if err != nil {
 		return err
 	}
+
 	runRoot := filepath.Join(stateMount, containerID)
 	overlaysRoot := filepath.Join(runRoot, "overlays")
 	upper := filepath.Join(overlaysRoot, "diff")
@@ -265,16 +290,20 @@ func mountOverlayFromRootFS(containerID, bundleDir, lower, containerStateDisk st
 	if err := os.MkdirAll(upper, 0o755); err != nil {
 		return err
 	}
+
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		return err
 	}
+
 	if err := os.MkdirAll(merged, 0o755); err != nil {
 		return err
 	}
+
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", lower, upper, work)
 	if err := syscall.Mount("overlay", merged, "overlay", 0, opts); err != nil {
 		return fmt.Errorf("mount overlay lower=%s upper=%s work=%s merged=%s: %w", lower, upper, work, merged, err)
 	}
+
 	return nil
 }
 
@@ -283,15 +312,19 @@ func ensureOverlayStateMounted(mountPoint string) (string, error) {
 	if strings.TrimSpace(mountPoint) == "" {
 		mountPoint = overlayStateMountPoint()
 	}
+
 	if _, err := os.Stat(device); err != nil {
 		return "", fmt.Errorf("overlay state disk device not found: %s (%w)", device, err)
 	}
+
 	if err := os.MkdirAll(mountPoint, 0o755); err != nil {
 		return "", fmt.Errorf("create overlay mountpoint %s: %w", mountPoint, err)
 	}
+
 	if err := syscall.Mount(device, mountPoint, "ext4", 0, ""); err != nil && err != syscall.EBUSY {
 		return "", fmt.Errorf("mount overlay state disk %s at %s: %w", device, mountPoint, err)
 	}
+
 	return mountPoint, nil
 }
 
@@ -313,12 +346,15 @@ func pumpToByteStream(src io.ReadCloser, dst vmapi.ByteStream) {
 				return
 			}
 		}
+
 		if err == io.EOF {
 			break
 		}
+
 		if errors.Is(err, os.ErrClosed) {
 			return
 		}
+
 		if err != nil {
 			log.Printf("stream read failed: %v", err)
 			return
