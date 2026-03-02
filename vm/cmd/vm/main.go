@@ -26,7 +26,7 @@ func main() {
 	containerSharedHostDir := ""
 	virtioFSTag := "vmrunnerfs0"
 	virtioFSMountPoint := "/var/run/vmrunner"
-	containerStateMount := "/mnt/containers"
+	containerStateMount := "/containers"
 	containerDiskSizeMiB := 4096
 	containerDiskLabel := "vmrunner-data"
 	containerRootfsPath := ""
@@ -55,7 +55,7 @@ func main() {
 	flag.StringVar(&containerSharedHostDir, "container-shared-host-dir", "", "Host directory used for virtio-fs container rootfs sharing")
 	flag.StringVar(&virtioFSTag, "virtiofs-tag", "vmrunnerfs0", "Virtio-fs tag")
 	flag.StringVar(&virtioFSMountPoint, "virtiofs-mount-point", "/var/run/vmrunner", "Virtio-fs guest mount point hint")
-	flag.StringVar(&containerStateMount, "container-state-mount", "/mnt/containers", "Guest mountpoint for writable overlay state disk")
+	flag.StringVar(&containerStateMount, "container-state-mount", "/containers", "Guest mountpoint for writable overlay state disk")
 	flag.IntVar(&containerDiskSizeMiB, "container-disk-size-mib", 4096, "Size of extra ext4 disk")
 	flag.StringVar(&containerDiskLabel, "container-disk-label", "vmrunner-data", "Filesystem label for writable container state disk")
 	flag.StringVar(&ociSpecPath, "oci-spec", "", "Optional path to OCI config.json to run inside guest")
@@ -109,6 +109,21 @@ func main() {
 
 	if vmManagerPath == "" {
 		vmManagerPath = state.ManagerBinary
+	}
+	if _, err := os.Stat(vmManagerPath); err != nil {
+		fmt.Fprintf(os.Stderr, "missing vmmanager binary at %s: %v\n", vmManagerPath, err)
+		fmt.Fprintln(os.Stderr, "build artifacts first: make image vm-binaries")
+		os.Exit(2)
+	}
+	if _, err := os.Stat(cfg.KernelPath); err != nil {
+		fmt.Fprintf(os.Stderr, "missing kernel artifact at %s: %v\n", cfg.KernelPath, err)
+		fmt.Fprintln(os.Stderr, "build artifacts first: make kernel")
+		os.Exit(2)
+	}
+	if _, err := os.Stat(cfg.RootImage); err != nil {
+		fmt.Fprintf(os.Stderr, "missing root image at %s: %v\n", cfg.RootImage, err)
+		fmt.Fprintln(os.Stderr, "build artifacts first: make raw")
+		os.Exit(2)
 	}
 
 	bootMode, err := vm.ParseBootMode(bootModeRaw)

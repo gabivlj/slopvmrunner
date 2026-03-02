@@ -43,6 +43,13 @@ log "applying rootfs overlay and installing agent as /sbin/agent"
 cp -R "$OVERLAY_DIR"/* "$ROOTFS_DIR"/
 install -m 0755 "$BUILD_DIR/agent" "$ROOTFS_DIR/sbin/agent"
 
+# Mountpoint for writable container state disk when guest root disk is read-only.
+mkdir -p "$ROOTFS_DIR/containers"
+
+# Mountpoint for virtiofs-shared image store.
+# Alpine usually links /var/run -> /run, so create /run directly.
+mkdir -p "$ROOTFS_DIR/run/vmrunner"
+
 RUNC_BIN_PATH="$BUILD_DIR/runc.${RUNC_ARCH}"
 if [[ ! -f "$RUNC_BIN_PATH" ]]; then
   RUNC_URL="https://github.com/opencontainers/runc/releases/download/v${RUNC_VERSION}/runc.${RUNC_ARCH}"

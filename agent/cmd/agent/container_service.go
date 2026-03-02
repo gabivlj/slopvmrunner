@@ -128,7 +128,15 @@ func (c *containerServer) Start(_ context.Context, call vmapi.Container_start) e
 		}
 	}
 
-	bundleDir := filepath.Join(c.containerStateDisk, c.id, "bundle")
+	runRoot := filepath.Join(c.containerStateDisk, c.id)
+	bundleDir := filepath.Join(runRoot, "bundle")
+
+	// Clear stale runc state for reused IDs.
+	runcPath := os.Getenv("AGENT_RUNC_PATH")
+	if runcPath == "" {
+		runcPath = defaultRuncPath
+	}
+
 	if err := os.MkdirAll(bundleDir, 0o755); err != nil {
 		return fmt.Errorf("create bundle dir %q: %w", bundleDir, err)
 	}
@@ -142,12 +150,11 @@ func (c *containerServer) Start(_ context.Context, call vmapi.Container_start) e
 		return err
 	}
 
-	runcPath := os.Getenv("AGENT_RUNC_PATH")
-	if runcPath == "" {
-		runcPath = defaultRuncPath
+	runcRoot := filepath.Join(runRoot, "runc-root")
+	if err := os.MkdirAll(runcRoot, 0o755); err != nil {
+		return fmt.Errorf("create runc root %q: %w", runcRoot, err)
 	}
-
-	cmd := exec.Command(runcPath, "run", "--bundle", bundleDir, c.id)
+	cmd := exec.Command(runcPath, "--root", runcRoot, "run", "--bundle", bundleDir, c.id)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		// Get signals from parent.
 		Setpgid: true,

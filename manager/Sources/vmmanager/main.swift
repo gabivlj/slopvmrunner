@@ -504,7 +504,7 @@ Options:
         var storageDevices: [VZStorageDeviceConfiguration] = []
         let rootDiskAttachment = try VZDiskImageStorageDeviceAttachment(
             url: URL(fileURLWithPath: config.rootImagePath),
-            readOnly: false
+            readOnly: true
         )
         storageDevices.append(VZVirtioBlockDeviceConfiguration(attachment: rootDiskAttachment))
         for extraPath in config.extraDiskPaths {
@@ -563,7 +563,7 @@ Options:
             guard let tag = config.virtioFSTag, !tag.isEmpty else {
                 throw CLIError.invalidArg("missing --virtiofs-tag when --enable-virtiofs=true")
             }
-            let share = VZSharedDirectory(url: URL(fileURLWithPath: hostDir), readOnly: false)
+            let share = VZSharedDirectory(url: URL(fileURLWithPath: hostDir), readOnly: true)
             let singleShare = VZSingleDirectoryShare(directory: share)
             let fs = VZVirtioFileSystemDeviceConfiguration(tag: tag)
             fs.share = singleShare

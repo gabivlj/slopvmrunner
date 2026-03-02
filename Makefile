@@ -30,19 +30,22 @@ GO_MIN_VERSION := go1.26.0
 TEST ?=
 VERBOSE_FLAG := $(if $(filter 1 true yes on,$(RUN_VERBOSE)),--verbose,)
 
-.PHONY: help api agent rootfs kernel raw image vm-binaries test run run-go run-container run-efi clean clean-kernel check-kernel require-kernel check-go
+.PHONY: help api agent rootfs kernel raw image vm-binaries install test run run-go run-go-fast run-container run-container-fast run-efi clean clean-kernel check-kernel require-kernel require-installed-artifacts check-go
 
 help:
 	@echo "Targets:"
 	@echo "  make image              Build agent + rootfs + kernel + raw image"
 	@echo "  make api                Generate Go bindings from api/capnp/*.capnp"
 	@echo "  make vm-binaries        Build vm + vmmanager binaries into ~/.slopvmrunner/bin/"
+	@echo "  make install            Install flow (currently broken)"
 	@echo "  make kernel             Build/refresh kernel artifact"
 	@echo "  make rootfs             Build/refresh rootfs tree"
 	@echo "  make raw                Build/refresh rootfs.raw"
 	@echo "  make run                Run VM in linux boot mode"
-	@echo "  make run-go             Run VM via Go wrapper (spawns Swift manager)"
-	@echo "  make run-container      Run VM via Go wrapper and auto-pull IMAGE for container flow"
+	@echo "  make run-go             Run VM via Go wrapper (rebuilds changed artifacts)"
+	@echo "  make run-go-fast        Run VM via Go wrapper using preinstalled artifacts only"
+	@echo "  make run-container      Run container flow (rebuilds changed artifacts)"
+	@echo "  make run-container-fast Run container flow using preinstalled artifacts only"
 	@echo "  make run-efi            Run VM in efi boot mode"
 	@echo "  make test               Run e2e cold-boot benchmark test"
 	@echo "  make check-kernel       Validate kernel artifact format"
@@ -94,7 +97,7 @@ rootfs: image/scripts/build-rootfs.sh image/scripts/lib/arch.sh image/rootfs-ove
 	BUILD_DIR=$(STATE_HOME) VERBOSE=$(VERBOSE) ./image/scripts/build-rootfs.sh
 	@touch $(STATE_HOME)/.rootfs.stamp
 
-$(KERNEL): image/scripts/build-kernel.sh image/scripts/build-kernel-source.sh image/scripts/lib/arch.sh $(STATE_HOME)/.rootfs.stamp
+$(KERNEL): image/scripts/build-kernel.sh image/scripts/build-kernel-source.sh image/scripts/lib/arch.sh | $(STATE_HOME)/.rootfs.stamp
 	@if [[ -n "$(KERNEL_PREBUILT_DIR)" ]]; then \
 		mkdir -p "$(dir $(KERNEL))"; \
 		if [[ -f "$(KERNEL_PREBUILT_DIR)" ]]; then \
@@ -144,6 +147,10 @@ $(VM_BIN): check-go vm/go.mod $(VM_GO_SOURCES) $(STATE_HOME)/.api-go.stamp $(API
 
 vm-binaries: $(VMMANAGER_BIN) $(VM_BIN)
 
+install:
+	@echo "install is broken"
+	@exit 1
+
 test: check-go $(ROOT_IMAGE) require-kernel vm-binaries
 	cd vm && $(GO_BUILD_ENV) go test -count=1 -v $(if $(TEST),-run '$(TEST)',) ./...
 
@@ -164,7 +171,29 @@ require-kernel:
 		( echo "invalid kernel format for arm64:" && file "$(KERNEL)" && echo "run: make kernel KERNEL_MODE=source" && exit 1 ); \
 	fi
 
-run: $(ROOT_IMAGE) require-kernel $(VMMANAGER_BIN)
+require-installed-artifacts:
+	@if [[ ! -x "$(VM_BIN)" ]]; then \
+		echo "missing vm binary: $(VM_BIN)"; \
+		echo "build artifacts first: make image vm-binaries"; \
+		exit 1; \
+	fi
+	@if [[ ! -x "$(VMMANAGER_BIN)" ]]; then \
+		echo "missing vmmanager binary: $(VMMANAGER_BIN)"; \
+		echo "build artifacts first: make image vm-binaries"; \
+		exit 1; \
+	fi
+	@if [[ ! -f "$(ROOT_IMAGE)" ]]; then \
+		echo "missing root image: $(ROOT_IMAGE)"; \
+		echo "build artifacts first: make image"; \
+		exit 1; \
+	fi
+	@if [[ ! -f "$(KERNEL)" ]]; then \
+		echo "missing kernel: $(KERNEL)"; \
+		echo "build artifacts first: make kernel"; \
+		exit 1; \
+	fi
+
+run: require-installed-artifacts require-kernel
 	$(VMMANAGER_BIN) \
 		--boot-mode $(BOOT_MODE) \
 		--kernel $(KERNEL) \
@@ -174,7 +203,7 @@ run: $(ROOT_IMAGE) require-kernel $(VMMANAGER_BIN)
 		--cpus $(CPUS) \
 		$(VERBOSE_FLAG)
 
-run-go: $(ROOT_IMAGE) require-kernel $(VM_BIN)
+run-go-fast: require-installed-artifacts require-kernel
 	$(VM_BIN) \
 		--boot-mode $(BOOT_MODE) \
 		--kernel $(KERNEL) \
@@ -188,7 +217,7 @@ run-go: $(ROOT_IMAGE) require-kernel $(VM_BIN)
 		--cpus $(CPUS) \
 		$(VERBOSE_FLAG)
 
-run-container: $(ROOT_IMAGE) require-kernel $(VM_BIN)
+run-container-fast: require-installed-artifacts require-kernel
 	$(VM_BIN) \
 		--boot-mode $(BOOT_MODE) \
 		--kernel $(KERNEL) \
@@ -205,7 +234,13 @@ run-container: $(ROOT_IMAGE) require-kernel $(VM_BIN)
 		--container-image $(IMAGE) \
 		$(VERBOSE_FLAG)
 
-run-efi: $(ROOT_IMAGE) $(VMMANAGER_BIN)
+run-go: image vm-binaries
+	$(MAKE) run-go-fast
+
+run-container: image vm-binaries
+	$(MAKE) run-container-fast
+
+run-efi: require-installed-artifacts
 	$(VMMANAGER_BIN) \
 		--boot-mode efi \
 		--root-image $(ROOT_IMAGE) \
